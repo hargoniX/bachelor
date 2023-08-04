@@ -1,0 +1,41 @@
+// TODO: better styling
+#let title = "verix: A Verified Rust ix(4) driver"
+#let author = "Henrik Böving"
+
+#set par(justify: true)
+
+#set document(
+    title: title,
+    author: author
+)
+#set page(numbering : "1")
+// Title page.
+
+#align(center)[
+  #text(2em, weight: 700, title)
+  
+  #text(1.00em, author)
+]
+
+#v(10pt)
+
+= Introduction
+= Technologies
+== L4
+- Microkernel
+- Capabilities
+- VBus/IO
+== Rust
+- Memory Safety via Borrow Checker
+- Trait System
+- Macro System
+== Kani
+- Model Checking
+- Used for Unsafe code before
+= verix
+== Architecture
+- image of how componenets connect
+== pc-hal/pc-hal-l4
+== verix
+== mix
+= Conclusion
