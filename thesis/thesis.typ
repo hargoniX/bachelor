@@ -4,9 +4,9 @@
     title: "verix: A Verified Rust ix(4) driver",
     authors: (
       (
-        name: "Henrik Böving", 
-        email: "henrik_boeving@genua.de", 
-        affiliation: "genua GmbH", 
+        name: "Henrik Böving",
+        email: "henrik_boeving@genua.de",
+        affiliation: "genua GmbH",
       ),
     ),
     abstract: lorem(70),
@@ -28,7 +28,7 @@ As computer systems are becoming increasingly omnipresent and complex both the n
 Because of this, catching bugs with potentially catastrophic effects before they happen is becoming more and more important.
 These bugs usually occur in one of two fashions:
 1. Processing of data, for example in algorithm or data structure implementations
-2. Acquisition of data, usually when interacting with the outside world in some way or form 
+2. Acquisition of data, usually when interacting with the outside world in some way or form
 This thesis is mostly concerned with the latter kind.
 
 // State the problem you tackle
@@ -47,7 +47,7 @@ Instead, the focus is usually put on other issues that arise in driver implement
   as well as the absence of C-related issues
 - #cite("more2021hol4drivers") implements a verified monitor for interactions of a real driver with the @NIC instead of verifying the driver itself. While this means that bad interactions with the hardware can now be detected at runtime this still has to be done in a way that is
 preventing the driver from its regular operations which usually means a crash.
-    
+
 // Explain, in one sentence, how you tackled the research question.
 In this thesis, we are going to show that formally verifying the interaction of a driver with the @NIC is possible by implementing a model of the target hardware and using @BMC to prove that they cooperate correctly.
 
@@ -60,24 +60,153 @@ We are then going to show, using the kani BMC, that the driver correctly coopera
 - The driver doesn't panic
 - The driver doesn't put the model into an undefined state
 - The driver receives all packets that are received by the model
-- The model sends all packets that the driver is told to send
+- The driver correctly instructs the model to send packets
 #pagebreak()
 
 = Technologies
+== L4.Fiasco
+- Microkernel concept
+  - Capabilities
+  - Everything in userspace
+- APIs that we use:
+  - VBus/IO
+  - Dataspaces
 == Rust
+We choose to use the Rust programming language for the entire implementation
+due to three key factors:
+1. It is memory safe by default while at the same time being competitive with
+   the likes of C/C++ in terms of performance.
+2. If necessary it still allows us to break out into a memory unsafe subset of
+   language, unlike most memory safe languages such as Java.
+3. It already has partial support on our target platform, L4.Fiasco.
+
+In this section we aim to give an overview over the important Rust features
+that we are going to use. For an overview over the entire Rust language refer to TODO.
+
+All variables in Rust are immutable by default, hence the following program does
+not compile:
 #sourcecode[```rust
 fn main() {
-  println!("Hello world");
+    let c = 0;
+    println!("Hello: {}", c);
+    c += 1;
+    println!("Hello: {}", c);
 }
 ```]
+But mutability can be opted in to by using `let mut`. The idea behind immutable by
+default is to limit the amount of moving pieces in a software to a minimum which
+allows programmers to argue easier about their code. On top of that it plays an
+important role in Rust's approach to memory safety.
+
+The most notable feature of Rust that distinguishes it from other widely used programming
+language right now is ownership and the part of the compiler that enforces it,
+the borrow checker. It is the key feature in providing the memory safety per default.
+As the name suggests, every value in Rust has an owner. The compiler enforces
+that there can only be exactly one owner of a value at a time. Once this owner
+goes out of scope the value gets freed, or in Rust terms, dropped.
+
+On top of this a value can be moved from one owner to another. This happens in
+two situations:
+1. A value is returned from a function
+2. A value is passed into another function
+Once a value has been moved the previous owner is not capable of accessing it
+anymore. For example the following program is not accepted by the compiler:
+#sourcecode[```rust
+fn func(s : String) {
+    println!("Hello: {}", s);
+}
+
+fn main() {
+    let s = String::from("World");
+    // the value behind `s` gets moved here
+    func(s);
+    // `s` is no longer valid
+    func(s);
+}
+```]
+Rust offers two ways to resolve the above situation. The value can be cloned with
+`s.clone()`, cheap values such as integers are automatically cloned. Alternatively
+a reference to the value can be passed to the function, this is called borrowing.
+On top of enforcing the ownership rule, the borrow checker also enforces that
+references can never outlive the value they are referring to.
+
+Keeping up the distinction between mutable and immutable values Rust supports two kinds of references:
+1. Immutable ones: `&var : &Type`, they are a read only view of the data
+2. Mutable ones: `&mut var: &mut Type`, they are a read and write view of the data
+In order to prevent data races at compile time the borrow checker provides the
+additional guarantees that a value can either:
+- be immutably referenced one or more times
+- or be mutably referenced a single time
+Using this knowledge the above example can be rewritten to:
+#sourcecode[```rust
+fn func(s : &String) {
+    println!("Hello: {}", s);
+}
+
+fn main() {
+    let s = String::from("Hello World");
+    func(&s);
+    func(&s);
+}
+```]
+
+While the borrow checker is capable of correctly identifying the vast majority
+of code that does adhere to the above restrictions at compile time, it is not
+infallible. Rust provides several ways to work around the borrow checker in case
+of such false negatives.
+
+The simplest ones are wrapper types that lift the ownership restrictions in one
+way or another. We are interested in only one of those: `RefCell<T>`. This type
+shifts the borrow checking to the run time, and throws errors if we violate the
+restrictions while running.
+
+If these wrapper types are still not enough to resolve the situation one can
+fall back to using `unsafe` code. However writing buggy `unsafe` code will not
+lead to compiler or run time errors but instead undefined behavior like in C/C++.
+A common `unsafe` example is splitting a slice (a fat pointer) into two:
+#sourcecode[```rust
+unsafe fn split_at_unchecked<T>(data: &[T], mid: usize) -> (&[T], &[T]) {
+    let len = data.len();
+    let ptr = data.as_ptr();
+    (from_raw_parts(ptr, mid), from_raw_parts(ptr.add(mid), len - mid))
+}
+```]
+Note that we had to declare the function itself as `unsafe` as well since calling
+`unsafe` functions is "viral" in Rust. That said we can provide safe API wrappers
+around them that ensure preconditions for using the unsafe API are met. In this
+example we must ensure that `mid <= len` to prevent the second slice from pointing
+into memory outside of the original one:
+#sourcecode[```rust
+fn split_at<T>(data: &[T], mid: usize) -> (&[T], &[T]) {
+    assert!(mid <= data.len());
+    unsafe { data.split_at_unchecked(mid) }
+}
+```]
+Using the `unsafe` block feature like here is an instruction to the compiler to
+trust the programmer that the contained code is safe in this context. The context
+in the above function being that we already asserted the necessary preconditions.
+
+Besides being used for memory management, the ownership system can also be used
+for general resource management. For example a type `File` that wraps OS file
+handles can automatically close itself while being dropped. This is achieved by
+implementing the `Drop` trait:
+#sourcecode[```rust
+impl Drop for File {
+    fn drop(&mut self) {
+        close(self.handle);
+    }
+}
+```]
+
+-> transition to traits
 
 In this chapter, I just want to demonstrate the Rust features that we are
 going to use, precisely to the extent that I am going to use them:
 - Memory Safety via Borrow Checker
   - borrow checking rules
   - RefCell
-  - Rc
   - custom Drop
+  - unsafe
 - Trait System:
   - interface replacement
   - associated types
@@ -85,15 +214,6 @@ going to use, precisely to the extent that I am going to use them:
 - Macro System
   - declarative macros
   - grammar style declarative macros
-- const generics
-  - just the very basics, we only use this feature in one place
-== L4
-- Microkernel concept
-  - Capabilities
-  - Everything in userspace
-- APIs that we use:
-  - VBus/IO
-  - Dataspaces
 == Kani
 - general idea: Rust -> CBMC -> SMT
 - show the 3 core features:
