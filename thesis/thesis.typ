@@ -19,8 +19,6 @@
     )
 )
 
-// TODO: do I want to use miri as well?
-
 = Introduction
 // Inspired by: https://grosser.science/howtos/paper-writing
 // Introduction. In one sentence, what’s the topic?
@@ -64,6 +62,7 @@ We are then going to show, using the kani BMC, that the driver correctly coopera
 #pagebreak()
 
 = L4.Fiasco
+TODO: Ask people at work what to cite for L4
 - Microkernel concept
   - Capabilities
   - Everything in userspace
@@ -71,7 +70,7 @@ We are then going to show, using the kani BMC, that the driver correctly coopera
   - VBus/IO
   - Dataspaces
 = Rust
-We choose to use the Rust programming language for the entire implementation
+We chose to use the Rust programming language for the entire implementation
 due to three key factors:
 1. It is memory safe by default while at the same time being competitive with
    the likes of C/C++ in terms of performance.
@@ -80,7 +79,8 @@ due to three key factors:
 3. It already has partial support on our target platform, L4.Fiasco.
 
 In this section we aim to give an overview over the important Rust features
-that we are going to use. For an overview over the entire Rust language refer to TODO.
+that we are going to use. For a more complete overview of the Rust language
+refer to #cite("rustbook").
 
 == Ownership
 All variables in Rust are immutable by default, hence the following program does
@@ -174,8 +174,8 @@ unsafe fn split_at_unchecked<T>(data: &[T], mid: usize) -> (&[T], &[T]) {
 Note that we had to declare the function itself as `unsafe` as well since calling
 `unsafe` functions is "viral" in Rust. That said we can provide safe API wrappers
 around them that ensure preconditions for using the unsafe API are met. In this
-example we must ensure that `mid <= len` to prevent the second slice from pointing
-into memory outside of the original one:
+example we have to ensure that `mid <= len` to prevent the second slice from
+pointing into memory outside of the original one:
 #sourcecode[```rust
 fn split_at<T>(data: &[T], mid: usize) -> (&[T], &[T]) {
     assert!(mid <= data.len());
@@ -284,16 +284,21 @@ Whether to use generic or associated types thus comes down to a usability
 (through type inference) vs flexibility (through additional permitted instances) trade off.
 
 == Macros
+#cite("rustmacrobook")
 - Macro System
   - declarative macros
   - grammar style declarative macros
 = Kani
+- Source: #cite("kani")
 - general idea: Rust -> CBMC -> SMT
-- show the 3 core features:
+- show the core features:
   - any
   - assume
   - loop unwinding
+  - mocking
+- Mention the custom flags we use
 = Intel 82599
+#cite("intel:82599")
 - general PCI setup:
   - interaction with the PCI config space
   - map BAR
@@ -316,10 +321,11 @@ Whether to use generic or associated types thus comes down to a usability
 - show the MMIO macro
   - this will reference the macro and the const generic stuff
 == pc-hal-l4
+#cite("humendal4")
 - show how traits map to l4 concepts
 - custom Drop to free resources in the kernel
 == verix
-- ixy knockoff
+- ixy knockoff: #cite("emmerichixy") #cite("ellmannixy")
 - main differences:
   - written against a generic interface (implemented for L4 right now)
   - uses far less unsafe for memory-mapped structures
