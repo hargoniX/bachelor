@@ -205,33 +205,32 @@ and thus provide a few extra features on top of the classical interface concept.
 
 Declaring an interface style trait like `Drop` from above looks like this:
 #sourcecode[```rust
-trait Eq {
-    fn eq(&self, other: &Self) -> bool;
+trait Add {
+    fn add(self, rhs: Self) -> Self;
 }
 ```]
 We might then continue to implement this trait for a bunch of basic types like
 strings, integers etc. But implementing it for generic types such as pairs
-gets more interesting. Intuitively we can only test for equality of two pairs
-if the things in the pairs can be tested. We can express this constraint in a
-trait implementation:
+gets more interesting. Intuitively we can add two pairs if the things in the
+pairs can be added. We can express this constraint in a trait implementation:
 #sourcecode[```rust
-impl<L, R> Eq for (L, R)
+impl<L, R> Add for (L, R)
 where
-    L: Eq,
-    R: Eq,
+    L: Add,
+    R: Add,
 {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0) && self.1.eq(&other.1)
+    fn add(self, rhs: Self) -> Self {
+        (self.0.add(rhs.0), self.1.add(rhs.1))
     }
 }
 ```]
-If we try to call `eq` on a pair value Rust will start looking for fitting instances
+If we try to call `add` on a pair value Rust will start looking for fitting instances
 for the types of the values contained in the pairs. In particular it will recursively
-chain this instance to figure out how to compare values of types like `(u8, (u8, u8))`.
+chain this instance to figure out how to add values of types like `(u8, (u8, u8))`.
 
 Furthermore traits can have generic arguments themselves as well. For example
 a heterogeneous `Add` trait which supports both normal addition of integers etc.
-but also things like adding a `Duration` on top of a `Time`:
+but also things like adding a `Duration` on top of a `Time` might look like this:
 #sourcecode[```rust
 pub trait Add<Rhs, Out> {
     fn add(self, rhs: Rhs) -> Out;
