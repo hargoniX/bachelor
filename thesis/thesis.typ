@@ -63,15 +63,14 @@ We are then going to show, using the kani BMC, that the driver correctly coopera
 - The driver correctly instructs the model to send packets
 #pagebreak()
 
-= Technologies
-== L4.Fiasco
+= L4.Fiasco
 - Microkernel concept
   - Capabilities
   - Everything in userspace
 - APIs that we use:
   - VBus/IO
   - Dataspaces
-== Rust
+= Rust
 We choose to use the Rust programming language for the entire implementation
 due to three key factors:
 1. It is memory safe by default while at the same time being competitive with
@@ -83,6 +82,7 @@ due to three key factors:
 In this section we aim to give an overview over the important Rust features
 that we are going to use. For an overview over the entire Rust language refer to TODO.
 
+== Ownership
 All variables in Rust are immutable by default, hence the following program does
 not compile:
 #sourcecode[```rust
@@ -198,29 +198,103 @@ impl Drop for File {
 }
 ```]
 
--> transition to traits
+== Traits
+Traits in Rust fulfill a similar purpose to interfaces in languages like Java.
+However they are strongly inspired by type classes from languages like Haskell
+and thus provide a few extra features on top of the classical interface concept.
 
-In this chapter, I just want to demonstrate the Rust features that we are
-going to use, precisely to the extent that I am going to use them:
-- Memory Safety via Borrow Checker
-  - borrow checking rules
-  - RefCell
-  - custom Drop
-  - unsafe
-- Trait System:
-  - interface replacement
-  - associated types
-  - constraints
+Declaring an interface style trait like `Drop` from above looks like this:
+#sourcecode[```rust
+trait Eq {
+    fn eq(&self, other: &Self) -> bool;
+}
+```]
+We might then continue to implement this trait for a bunch of basic types like
+strings, integers etc. But implementing it for generic types such as pairs
+gets more interesting. Intuitively we can only test for equality of two pairs
+if the things in the pairs can be tested. We can express this constraint in a
+trait implementation:
+#sourcecode[```rust
+impl<L, R> Eq for (L, R)
+where
+    L: Eq,
+    R: Eq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0) && self.1.eq(&other.1)
+    }
+}
+```]
+If we try to call `eq` on a pair value Rust will start looking for fitting instances
+for the types of the values contained in the pairs. In particular it will recursively
+chain this instance to figure out how to compare values of types like `(u8, (u8, u8))`.
+
+Furthermore traits can have generic arguments themselves as well. For example
+a heterogeneous `Add` trait which supports both normal addition of integers etc.
+but also things like adding a `Duration` on top of a `Time`:
+#sourcecode[```rust
+pub trait Add<Rhs, Out> {
+    fn add(self, rhs: Rhs) -> Out;
+}
+
+// Add raw times
+impl Add<Time, Time> for Time {
+    fn add(self, rhs: Time) -> Time { /* */ }
+}
+
+// Add relative durations onto some time
+impl Add<Duration, Time> for Time {
+    fn add(self, rhs: Duration) -> Time { /* */ }
+}
+```]
+
+There is one drawback to this approach: In order to find an `Add` instance
+all of the types involved have to be known. Otherwise the trait system cannot
+know whether to use the first or the second instance. While it is very likely that
+the compiler already knows the input types it is much less likely that it will be
+able to figure out the output on its own. This would force users to put explicit
+type annotations in order to make the instance search succeed. In order to make
+using this trait easier we can use so called associated types:
+
+#sourcecode[```rust
+pub trait Add<Rhs> {
+    type Out;
+    fn add(self, rhs: Rhs) -> Self::Out;
+}
+
+// Add raw times
+impl Add<Time> for Time {
+    type Out = Time;
+    fn add(self, rhs: Time) -> Time { /* */ }
+}
+
+// Add relative durations onto some time
+impl Add<Duration> for Time {
+    type Out = Time;
+    fn add(self, rhs: Duration) -> Time { /* */ }
+}
+```]
+
+Rust enforces that there can only be one instance for one assignment of generic
+variables. This means that while we could've previously written instances like
+`Add<Duration, Time> for Time` and `Add<Duration, Duration> for Time` the new design
+doesn't allow this as we would have two instance of the form `Add<Duration> for Time`.
+While associated types take a bit of flexibility away from the programmer they do
+allow Rust to start instance search without being known from type inference.
+Whether to use generic or associated types thus comes down to a usability
+(through type inference) vs flexibility (through additional permitted instances) trade off.
+
+== Macros
 - Macro System
   - declarative macros
   - grammar style declarative macros
-== Kani
+= Kani
 - general idea: Rust -> CBMC -> SMT
 - show the 3 core features:
   - any
   - assume
   - loop unwinding
-== Intel 82599
+= Intel 82599
 - general PCI setup:
   - interaction with the PCI config space
   - map BAR
