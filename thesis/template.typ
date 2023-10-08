@@ -56,14 +56,23 @@
 
 #let thesis(
     title: "This is my title",
-    authors: (),
+    name: "",
+    email: "",
+    matriculation: "",
     abstract: none,
     paper-size: "a4",
     bibliography-file: none,
     glossary: (),
+    supervisor_institution: "",
+    supervisor_company: "",
+    institution: "",
+    logo_company: none,
+    logo_institution: none,
+    logo_size: 0%,
+    submition_date: "",
     body
 ) = {
-    set document(title: title, author: authors.map(author => author.name))
+    set document(title: title, author: name)
     set text(font: "New Computer Modern", size: 11pt, lang: "en")
     set page(paper: paper-size)
     set heading(numbering: "1.1")
@@ -71,24 +80,45 @@
     show: make-glossary
     show link: set text(fill: blue.darken(60%))
 
-    // Title page.
+    // Logo
+    v(5%)
+    grid(
+      columns: (50%, 50%),
+      align(center + horizon, image(logo_institution, width: logo_size)),
+      align(center + horizon, image(logo_company, width: logo_size)),
+    )
+
+    // Institution
+    v(5%)
     align(center)[
-      #text(2em, weight: 700, title)
+      #text(1.5em, weight: 400, institution)
     ]
 
-    // Author information.
-    pad(
-      top: 0.7em,
-      grid(
-        columns: (1fr),
-        gutter: 1em,
-        ..authors.map(author => align(center)[
-          *#author.name* \
-          #author.email \
-          #author.affiliation \
-        ]),
-      ),
+    // Title page
+    v(3%)
+    line(length: 100%)
+    align(center)[
+      #text(2em, weight: 500, title)
+    ]
+    line(length: 100%)
+
+    // Author information
+    v(1fr) // push to bottom
+    grid(
+      columns: (1fr),
+      gutter: 1em,
+      align(center)[
+        *#name* \
+        #email \
+        #matriculation \
+        #supervisor_institution \
+        #supervisor_company
+      ],
     )
+
+    // Submition date
+    v(2%)
+    align(center, submition_date)
 
     pagebreak()
 

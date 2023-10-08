@@ -2,13 +2,9 @@
 
 #show: thesis.with(
     title: "verix: A Verified Rust ix(4) driver",
-    authors: (
-      (
-        name: "Henrik Böving",
-        email: "henrik_boeving@genua.de",
-        affiliation: "genua GmbH",
-      ),
-    ),
+    name: "Henrik Böving", 
+    email: "henrik_boeving@genua.de", 
+    matriculation: "XXX", 
     abstract: lorem(70),
     paper-size: "a4",
     bibliography-file: "thesis.bib",
@@ -16,7 +12,14 @@
         (key: "NIC", short: "NIC", long: "Network Interface Card"),
         (key: "BMC", short: "BMC", long: "Bounded Model Checking"),
         (key: "BAR", short: "BAR", long: "Base Address Register")
-    )
+    ),
+    supervisor_institution: "Prof. Dr. Matthias Güdemann (HM)", 
+    supervisor_company: "Claas Lorenz (genua GmbH)",
+    institution: "University of Applied Sciences Munich (HM)\nFaculty for Computer Science and Mathematics",
+    logo_company: "figures/genua.svg",
+    logo_institution: "figures/hm.svg",
+    logo_size: 60%,
+    submition_date: "DD.MM.2024"
 )
 
 = Introduction
