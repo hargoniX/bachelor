@@ -235,7 +235,7 @@ Furthermore traits can have generic arguments themselves as well. For example
 a heterogeneous `Add` trait which supports both normal addition of integers etc.
 but also things like adding a `Duration` on top of a `Time` might look like this:
 #sourcecode[```rust
-pub trait Add<Rhs, Out> {
+trait Add<Rhs, Out> {
     fn add(self, rhs: Rhs) -> Out;
 }
 
@@ -254,12 +254,12 @@ There is one drawback to this approach: In order to find an `Add` instance
 all of the types involved have to be known. Otherwise the trait system cannot
 know whether to use the first or the second instance. While it is very likely that
 the compiler already knows the input types it is much less likely that it will be
-able to figure out the output on its own. This would force users to put explicit
+able to figure out the output type on its own. This would force users to put explicit
 type annotations in order to make the instance search succeed. In order to make
 using this trait easier we can use so called associated types:
 
 #sourcecode[```rust
-pub trait Add<Rhs> {
+trait Add<Rhs> {
     type Out;
     fn add(self, rhs: Rhs) -> Self::Out;
 }
@@ -278,7 +278,7 @@ impl Add<Duration> for Time {
 ```]
 
 Rust enforces that there can only be one instance for one assignment of generic
-variables. This means that while we could've previously written instances like
+variables. This means that while we could have previously written instances like
 `Add<Duration, Time> for Time` and `Add<Duration, Duration> for Time` the new design
 doesn't allow this as we would have two instance of the form `Add<Duration> for Time`.
 While associated types take a bit of flexibility away from the programmer they do
