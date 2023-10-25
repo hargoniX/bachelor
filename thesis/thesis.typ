@@ -12,7 +12,9 @@
         (key: "NIC", short: "NIC", long: "Network Interface Card"),
         (key: "BMC", short: "BMC", long: "Bounded Model Checking"),
         (key: "CBMC", short: "CBMC", long: "C Bounded Model Checker"),
-        (key: "BAR", short: "BAR", long: "Base Address Register")
+        (key: "BAR", short: "BAR", long: "Base Address Register"),
+        (key: "EBNF", short: "EBNF", long: "Extended Backus Naur Form"),
+        (key: "TT", short: "TT", long: "Rust Token Tree"),
     ),
     supervisor_institution: "Prof. Dr. Matthias Güdemann (HM)",
     supervisor_company: "Claas Lorenz (genua GmbH)",
@@ -288,10 +290,69 @@ Whether to use generic or associated types thus comes down to a usability
 (through type inference) vs flexibility (through additional permitted instances) trade off.
 
 == Macros
-#cite("rustmacrobook")
-- Macro System
-  - declarative macros
-  - grammar style declarative macros
+While the recursive chaining of trait instances already allows a great deal of
+compile time code generation there are many situations where traits are not sufficient.
+A common case is to automatically generate the same code for a list of identifiers to e.g.
+test them or add similarly shaped trait instances to all of them.
+This is where Rust's macro system comes into play. Unlike the substitution based macros in C/C++,
+Rust's macro system allows users to write proper syntax tree to syntax tree transformations.
+Generally speaking Rust supports two kinds of macros:
+1. declarative macros, they use an EBNF inspired DSL to specify the transformation
+2. procedural macros, they use arbitrary Rust code for the transformation
+The macros used in this work are exclusively declarative ones so we only describe this approach.
+To illustrate the capabilities of declarative macros we embed a small math DSL into Rust:
+```
+x = 1;
+y = 2 * x;
+y;
+x;
+```
+Where if a variable is alone on a line we print its value. This can be done using
+a declarative macro in the style of a so called @TT muncher:
+#sourcecode[```rust
+macro_rules! math {
+    ($var:ident = $e:expr; $($tail:tt)*) => {
+        let $var = $e;
+        math!($($tail)*);
+    };
+    ($var:ident; $($tail:tt)*) => {
+        let x = format!("Value: {}", $var);
+        println!("{}", x);
+        math!($($tail)*);
+    };
+    () => {};
+}
+```]
+As we can see this macro has 3 "production rules":
+1. If we see `x = e; ...` we bind `x` to the value of `e` and recursively process
+   the remaining token trees in the input.
+2. If we see `x; ...` we print the value of `x` and process the rest.
+3. If there is no argument we do nothing. This is to handle the case when the
+   remaining token tree list is empty.
+
+The above macro also demonstrates an important guarantee of Rust macros, macro hygiene.
+We call a macro system hygienic when identifiers that are used within the body of a macro
+(like `let x = format...`) cannot collide with user provided identifiers (like the `x` from the input).
+So instead of `x` suddenly turning out to be a string once we want to print it, Rust
+kept the values separate and the following main function produces the expected output:
+#sourcecode[```rust
+fn main() {
+    math! {
+        x = 1;
+        y = 2 * x;
+        y;
+        x;
+    }
+}
+```]
+
+```
+Value: 2
+Value: 1
+```
+The precise workings of the declarative macro syntax and all the kinds
+of syntax that can be matched upon are far out of scope for this work so we refer to
+#cite("rustmacrobook") for a more detailed introduction.
 = Kani
 Kani #cite("kani") is the @BMC that we use to verify the Rust code.
 It is implemented as a code generation backend for the Rust compiler. However
