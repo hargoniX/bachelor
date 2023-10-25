@@ -2,18 +2,19 @@
 
 #show: thesis.with(
     title: "verix: A Verified Rust ix(4) driver",
-    name: "Henrik Böving", 
-    email: "henrik_boeving@genua.de", 
-    matriculation: "XXX", 
+    name: "Henrik Böving",
+    email: "henrik_boeving@genua.de",
+    matriculation: "XXX",
     abstract: lorem(70),
     paper-size: "a4",
     bibliography-file: "thesis.bib",
     glossary: (
         (key: "NIC", short: "NIC", long: "Network Interface Card"),
         (key: "BMC", short: "BMC", long: "Bounded Model Checking"),
+        (key: "CBMC", short: "CBMC", long: "C Bounded Model Checker"),
         (key: "BAR", short: "BAR", long: "Base Address Register")
     ),
-    supervisor_institution: "Prof. Dr. Matthias Güdemann (HM)", 
+    supervisor_institution: "Prof. Dr. Matthias Güdemann (HM)",
     supervisor_company: "Claas Lorenz (genua GmbH)",
     institution: "University of Applied Sciences Munich (HM)\nFaculty for Computer Science and Mathematics",
     logo_company: "figures/genua.svg",
@@ -292,14 +293,131 @@ Whether to use generic or associated types thus comes down to a usability
   - declarative macros
   - grammar style declarative macros
 = Kani
-- Source: #cite("kani")
-- general idea: Rust -> CBMC -> SMT
-- show the core features:
-  - any
-  - assume
-  - loop unwinding
-  - mocking
-- Mention the custom flags we use
+Kani #cite("kani") is the @BMC that we use to verify the Rust code.
+It is implemented as a code generation backend for the Rust compiler. However
+instead of generating executable code, it generates an intermediate representation
+of @CBMC #cite("cbmc"). While @CBMC is originally intended for verifying C code,
+by using this trick Kani is able to make use of all the features that already
+exist in @CBMC. By default Kani checks the following properties of a given piece
+of Rust code:
+- memory safety, that is:
+  - pointer type safety
+  - absence of invalid pointer indexing
+  - absence of out of bounds accesses
+- absence of mathematical errors like arithmetic overflow
+- absence of runtime panics
+- absence of violations of user-added assertions
+
+For example the following Rust code would crash if `a` has length $0$ or if `i`
+is sufficiently large enough:
+#sourcecode[```rust
+fn get_wrapped(a: &[u32], i: usize) -> u32 {
+    return a[i % a.len() + 1];
+}
+```]
+We can check this using Kani as follows:
+#sourcecode[```rust
+#[cfg(kani)]
+#[kani::proof]
+fn check_get_wrapped() {
+    let size: usize = kani::any();
+    let index: usize = kani::any();
+    let array: Vec<u32> = vec![0; size];
+    get_wrapped(&array, index);
+}
+```]
+Kani ends up spotting both failures and an additional one:
+```
+SUMMARY:
+Failed Checks: This is a placeholder message; Kani doesn't support message formatted at runtime
+ File: ".../alloc/src/raw_vec.rs", line 534, in alloc::raw_vec::capacity_overflow
+Failed Checks: attempt to calculate the remainder with a divisor of zero
+Failed Checks: index out of bounds: the length is less than or equal to the given index
+```
+As we just saw we can use the `kani::any()` function to generate arbitrary symbolic
+values of basic types like integers. These basic values can then be used to build
+up more complex symbolic values like the `Vec<u32>` from above. However there is
+one more issue than expected with the proof, the harness caused an error
+in the allocator for `Vec` because it is possible to request too much memory. Since the error is
+introduced by the proof code itself, instead of the code under test, we probably
+want to get rid off it. This can be achieved by putting a constraint on `size`
+using the `kani::assume()` function:
+#sourcecode[```rust
+#[cfg(kani)]
+#[kani::proof]
+fn check_get_wrapped() {
+    let size: usize = kani::any();
+    kani::assume(size < 128);
+    let index: usize = kani::any();
+    let array: Vec<u32> = vec![0; size];
+    get_wrapped(&array, index);
+}
+```]
+
+In the two harnesses above there is no iteration, this makes it easy for Kani to
+explore the entire state space. Once we introduce loops Kani unfolds them
+in order to explore the state space. In many situations we need to limit this
+unfolding to hold it back from exploring a large or potentially infinite state space:
+#sourcecode[```rust
+fn zeroize(buffer: &mut [u8]) {
+    for i in 0..buffer.len() {
+        buffer[i] = 0;
+    }
+}
+
+#[cfg(kani)]
+#[kani::proof]
+#[kani::unwind(1)] // deliberately too low
+fn check_zeroize() {
+    let size: usize = kani::any();
+    kani::assume(size < 128);
+    kani::assume(size > 0);
+    let mut buffer: Vec<u8> = vec![10; size];
+
+    zeroize(&mut buffer);
+}
+```]
+Instead of simply verifying only one loop iteration Kani tells us that this
+bound is too low:
+```
+Failed Checks: unwinding assertion loop 0
+```
+Once we increase it to $128$ all checks pass.
+
+The last feature that is of interest for this work are stubs. They allow us to
+replace functions in the code under verification with mocks. This is useful
+for verifying functions that are out of reach for Kani, for example interactions
+with the operating system:
+#sourcecode[```rust
+use std::{thread, time::Duration};
+
+fn interaction() {
+    thread::sleep(Duration::from_secs(1));
+    rate_limited_functionality();
+}
+
+#[cfg(kani)]
+#[kani::proof]
+fn check_interaction() {
+    interaction();
+}
+```]
+This code is rejected by Kani with:
+```
+Failed Checks: call to foreign "C" function `nanosleep` is not currently supported by Kani.
+```
+If we are only interested in verifying things about `rate_limited_functionality`
+we can tell Kani to replace `thread::sleep` with an empty function:
+#sourcecode[```rust
+fn mock_sleep(_dur : Duration) {}
+
+#[cfg(kani)]
+#[kani::proof]
+#[kani::stub(std::thread::sleep, mock_sleep)]
+fn check_interaction() {
+    interaction();
+}
+```]
 = Intel 82599
 #cite("intel:82599")
 - general PCI setup:
