@@ -15,6 +15,11 @@
         (key: "BAR", short: "BAR", long: "Base Address Register"),
         (key: "EBNF", short: "EBNF", long: "Extended Backus Naur Form"),
         (key: "TT", short: "TT", long: "Rust Token Tree"),
+        (key: "IPC", short: "IPC", long: "Inter Process Communication"),
+        (key: "DMA", short: "DMA", long: "Direct Memory Access"),
+        (key: "MMU", short: "MMU", long: "Memory Management Unit"),
+        (key: "IOMMU", short: "IOMMU", long: "Input/Output Memory Management Unit"),
+        (key: "VBus", short: "VBus", long: "Virtual Bus"),
     ),
     supervisor_institution: "Prof. Dr. Matthias Güdemann (HM)",
     supervisor_company: "Claas Lorenz (genua GmbH)",
@@ -53,28 +58,81 @@ Instead, the focus is usually put on other issues that arise in driver implement
 preventing the driver from its regular operations which usually means a crash.
 
 // Explain, in one sentence, how you tackled the research question.
-In this thesis, we are going to show that formally verifying the interaction of a driver with the @NIC is possible by implementing a model of the target hardware and using @BMC to prove that they cooperate correctly.
+In this thesis, we are show that formally verifying the interaction of a driver with the @NIC is possible by implementing a model of the target hardware and using @BMC to prove that they cooperate correctly.
 
 // How did you go about doing the research that follows from your big idea?
-To show that the concept is viable in practice we are going to implement a driver for the widely used Intel 82559ES @NIC.
-This is going to happen on the L4.Fiasco microkernel so misbehavior of the driver can barely affect the system as a whole in the first place.
-On top of that we are going to use the Rust programming language which guarantees additional safety properties out of the box.
-The driver and model themselves are going to be developed using a custom Rust eDSL in the spirit of svd2rust to make correct peripheral access easier.
-We are then going to show, using the kani BMC, that the driver correctly cooperates with a model of the 82559ES, where correctly means that:
+To show that the concept is viable in practice we implement a driver for the widely used Intel 82559ES @NIC.
+This is done on the L4.Fiasco #cite("l4doc") microkernel so misbehavior of the driver can barely affect the system as a whole in the first place.
+
+On top of that we are use the Rust programming language which guarantees additional safety properties out of the box.
+The driver and model themselves use a custom Rust DSL in the spirit of svd2rust to make correct peripheral access easier.
+Finally we show, using the Kani @BMC, that the driver correctly cooperates with a model of the 82559ES, where correctly means that:
 - The driver doesn't panic
 - The driver doesn't put the model into an undefined state
 - The driver receives all packets that are received by the model
 - The driver correctly instructs the model to send packets
 #pagebreak()
 
-= L4.Fiasco
-TODO: Ask people at work what to cite for L4
-- Microkernel concept
-  - Capabilities
-  - Everything in userspace
-- APIs that we use:
-  - VBus/IO
-  - Dataspaces
+= L4.Fiasco and L4Re
+Being a microkernel L4.Fiasco offers barely any functionality on a kernel level.
+Instead the kernel hands out hardware resources to user space tasks which
+in turn can distribute them further to other tasks. The idea being that we
+can limit the amount of things that a task can interact with to the bare minimum
+in order to reduce attack surface. The default set of user space programs that
+ships with L4.Fiasco is the L4 runtime environment or L4Re for short.
+In the following we illustrate the three main interaction mechanisms used by our driver.
+== Capabilities
+The most basic mechanism are so called capabilities. A capability is in a sense
+comparable to a file descriptor. It describes an object that is somewhere in the
+kernel and allows us to communicate with that object in a way. The difference to
+a file descriptor is that any object that we get from the kernel is described by
+a capability: threads, access to hardware, @IPC gates to other tasks etc.
+#figure(
+  image("figures/l4-caps-basic.png", width: 80%),
+  caption: [Capabilities],
+) <l4caps>
+
+This means that the set of capabilities that we initially grant our driver completely
+determine the way it may interact with the rest of the operating system.
+== Memory
+// TODO: This is almost literally the docs
+The separation of features out of the kernel in L4.Fiasco even goes as far as
+removing memory management from the kernel. Instead a so called pager task is
+designated as the memory manager of one or multiple threads. Once one of these
+threads causes a page fault the kernel sends the pager an @IPC notification
+and the pager returns either the backing page or an error. In the successful case
+the kernel then proceeds to map that page into the address space of the faulting
+thread. This allows the system to construct a hierarchy of memory mappings between tasks.
+One task can grant a portion of its memory to another task which can in turn only
+grant another sub-portion of that memory to another task etc.
+
+While this can be used to implement normal functionality like an allocator it is
+also an interesting feature for implementing programs that interact with hardware.
+It is very common for a driver to share some of its own memory with the hardware
+directly to allow high performance communication, this is called @DMA. However allowing
+hardware arbitrary access to memory is a risk in two ways:
+1. The hardware might overwrite or steal arbitrary memory contents
+2. The driver that interacts with the hardware might do the same via instructing
+   the hardware to, for example, write its data to an address the driver does not
+   usually have access to.
+For this reason a modern CPU usually ships a special @MMU that manages @DMA based memory access, the @IOMMU.
+This means that by modeling the hardware as a special kind of task with memory mappings that
+are managed by the @IOMMU instead of the regular @MMU we can allow our user space tasks
+to still manage their @DMA mappings themselves.
+
+== The Io server
+The Io server is a task that owns all resources related to hardware that are not needed
+by the kernel itself. This includes the PCI(e) bus, interrupts, IO memory and more.
+Thus in order to access hardware a task needs to have an @IPC capability to talk with
+the Io server. Instead of allowing processes with such a capability to obtain arbitrary
+hardware resources each client is granted its own limited view of the hardware in the form
+of a so called @VBus.
+#figure(
+  image("figures/io-overview.png", width: 80%),
+  caption: [Io architecture],
+) <l4io>
+As we can see in @l4io this allows us to limit the hardware that a task can see to the
+bare minimum required for operation.
 = Rust
 We chose to use the Rust programming language for the entire implementation
 due to three key factors:
@@ -85,7 +143,7 @@ due to three key factors:
 3. It already has partial support on our target platform, L4.Fiasco.
 
 In this section we aim to give an overview over the important Rust features
-that we are going to use. For a more complete overview of the Rust language
+that we use. For a more complete overview of the Rust language
 refer to #cite("rustbook").
 
 == Ownership
@@ -301,12 +359,13 @@ Generally speaking Rust supports two kinds of macros:
 2. procedural macros, they use arbitrary Rust code for the transformation
 The macros used in this work are exclusively declarative ones so we only describe this approach.
 To illustrate the capabilities of declarative macros we embed a small math DSL into Rust:
+#sourcecode[
 ```
 x = 1;
 y = 2 * x;
 y;
 x;
-```
+```]
 Where if a variable is alone on a line we print its value. This can be done using
 a declarative macro in the style of a so called @TT muncher:
 #sourcecode[```rust
@@ -501,7 +560,6 @@ fn check_interaction() {
 - show the traits
   - this will reference all of the trait stuff from above
 - show the MMIO macro
-  - this will reference the macro and the const generic stuff
 == pc-hal-l4
 #cite("humendal4")
 - show how traits map to l4 concepts
