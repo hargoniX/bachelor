@@ -1,5 +1,5 @@
 #import "@preview/glossarium:0.1.0": make-glossary, print-glossary, gls, glspl 
-#import "@preview/codelst:1.0.0": sourcecode
+#import "@preview/bytefield:0.0.1": bytefield, bit, bits, bytes, flagtext
 
 #let buildMainHeader(mainHeadingContent) = {
   [
@@ -79,6 +79,12 @@
     set par(justify: true)
     show: make-glossary
     show link: set text(fill: blue.darken(60%))
+    show outline.entry.where(
+      level: 1
+    ): it => {
+      v(12pt, weak: true)
+      strong(it)
+    }
 
     // Logo
     v(5%)

@@ -1,4 +1,5 @@
-#import "template.typ": thesis, sourcecode
+#import "template.typ": thesis, bytefield, bit, bits, bytes, flagtext
+#import "@preview/codelst:1.0.0": sourcecode
 
 #show: thesis.with(
     title: "verix: A Verified Rust ix(4) driver",
@@ -355,7 +356,7 @@ test them or add similarly shaped trait instances to all of them.
 This is where Rust's macro system comes into play. Unlike the substitution based macros in C/C++,
 Rust's macro system allows users to write proper syntax tree to syntax tree transformations.
 Generally speaking Rust supports two kinds of macros:
-1. declarative macros, they use an EBNF inspired DSL to specify the transformation
+1. declarative macros, they use an @EBNF inspired DSL to specify the transformation
 2. procedural macros, they use arbitrary Rust code for the transformation
 The macros used in this work are exclusively declarative ones so we only describe this approach.
 To illustrate the capabilities of declarative macros we embed a small math DSL into Rust:
@@ -543,6 +544,29 @@ fn check_interaction() {
 - general PCI setup:
   - interaction with the PCI config space
   - map BAR
+
+// TODO: MSB: https://github.com/jomaway/typst-bytefield/pull/5
+// TODO: Make this styling better
+#[
+#set text(size: 7pt)
+#figure(
+  bytefield(
+    bytes(2)[Device ID], bytes(2)[Vendor ID],
+    bytes(2)[Status Register], bytes(2)[Control Register],
+    bytes(3)[Class Code], bytes(1)[Revision ID],
+    bytes(1)[Reserved], bytes(1)[Header Type], bytes(1)[Latency Timer], bytes(1)[Cache Line Size],
+    bytes(4)[@BAR 0],
+    bytes(4)[@BAR 1],
+    bytes(4)[@BAR 2],
+    bytes(4)[@BAR 3],
+    bytes(4)[@BAR 4],
+    bytes(4)[@BAR 5],
+  ),
+  caption: [Beginning of the PCI config space]
+)
+]
+
+
 - 82599 specific stuff:
   - setup procedure:
     - reset
@@ -551,6 +575,52 @@ fn check_interaction() {
   - operation
     - descriptors
     - RX / TX queues
+
+// TODO: MSB: https://github.com/jomaway/typst-bytefield/pull/5
+
+#[
+#set text(size: 7pt)
+#figure(
+  bytefield(bits: 64,
+    bits(64)[Packet Buffer Address],
+    bits(63)[Header Buffer Address], bit[#flagtext("DD")],
+  ),
+  caption: [Advanced Receive Descriptors - Read]
+)
+]
+
+#[
+#set text(size: 7pt)
+#figure(
+  bytefield(bits: 64,
+    bits(32)[RSS Hash], bit[#flagtext("SPH")], bits(10)[HDR_LEN], bits(4)[RSCCNT], bits(13)[Packet Type], bits(4)[RSST],
+    bits(16)[VLAN Tag], bits(16)[PKT_LEN], bits(12)[Extended Error], bits(20)[Extended Status]
+  ),
+  caption: [Advanced Receive Descriptors - Write-Back]
+)
+]
+
+#[
+#set text(size: 7pt)
+#figure(
+  bytefield(bits: 64,
+    bits(64)[Packet Buffer Address],
+    bits(18)[PAYLEN], bits(6)[POPTS], bit[#flagtext("CC")], bits(3)[IDX], bits(4)[STA], bits(8)[DCMD], bits(4)[DTYP], bits(2)[#flagtext("MAC")], bits(2)[#flagtext("RSV")], bits(16)[DTALEN]
+  ),
+  caption: [Advanced Transmit Descriptors - Read]
+)
+]
+
+#[
+#set text(size: 7pt)
+#figure(
+  bytefield(bits: 64,
+    bits(64)[RSV],
+    bits(28)[RSV], bits(4)[STA] ,bits(32)[RSV]
+  ),
+  caption: [Advanced Transmit Descriptors - Write-Back]
+)
+]
 #pagebreak()
 
 = verix
