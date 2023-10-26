@@ -1,5 +1,9 @@
 #import "@preview/glossarium:0.1.0": make-glossary, print-glossary, gls, glspl 
-#import "@preview/bytefield:0.0.1": bytefield, bit, bits, bytes, flagtext
+#import "@preview/bytefield:0.0.1": bytefield, bit, bits, bytes
+
+// TODO: https://github.com/jomaway/typst-bytefield/pull/6
+#let flagtext(text) = align(center,rotate(270deg,text))
+
 
 #let buildMainHeader(mainHeadingContent) = {
   [
