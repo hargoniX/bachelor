@@ -1,4 +1,4 @@
-#import "template.typ": thesis, bytefield, bit, bits, bytes, flagtext
+#import "template.typ": thesis, bfield, bit, bits, bytes, flagtext
 #import "@preview/codelst:1.0.0": sourcecode
 
 #show: thesis.with(
@@ -546,11 +546,8 @@ fn check_interaction() {
   - map BAR
 
 // TODO: MSB: https://github.com/jomaway/typst-bytefield/pull/5
-// TODO: Make this styling better
-#[
-#set text(size: 7pt)
 #figure(
-  bytefield(
+  bfield(
     bytes(2)[Device ID], bytes(2)[Vendor ID],
     bytes(2)[Status Register], bytes(2)[Control Register],
     bytes(3)[Class Code], bytes(1)[Revision ID],
@@ -564,7 +561,6 @@ fn check_interaction() {
   ),
   caption: [Beginning of the PCI config space]
 )
-]
 
 
 - 82599 specific stuff:
@@ -578,49 +574,37 @@ fn check_interaction() {
 
 // TODO: MSB: https://github.com/jomaway/typst-bytefield/pull/5
 
-#[
-#set text(size: 7pt)
 #figure(
-  bytefield(bits: 64,
+  bfield(bits: 64,
     bits(64)[Packet Buffer Address],
     bits(63)[Header Buffer Address], bit[#flagtext("DD")],
   ),
   caption: [Advanced Receive Descriptors - Read]
 )
-]
 
-#[
-#set text(size: 7pt)
 #figure(
-  bytefield(bits: 64,
+  bfield(bits: 64,
     bits(32)[RSS Hash], bit[#flagtext("SPH")], bits(10)[HDR_LEN], bits(4)[RSCCNT], bits(13)[Packet Type], bits(4)[RSST],
     bits(16)[VLAN Tag], bits(16)[PKT_LEN], bits(12)[Extended Error], bits(20)[Extended Status]
   ),
   caption: [Advanced Receive Descriptors - Write-Back]
 )
-]
 
-#[
-#set text(size: 7pt)
 #figure(
-  bytefield(bits: 64,
+  bfield(bits: 64,
     bits(64)[Packet Buffer Address],
     bits(18)[PAYLEN], bits(6)[POPTS], bit[#flagtext("CC")], bits(3)[IDX], bits(4)[STA], bits(8)[DCMD], bits(4)[DTYP], bits(2)[#flagtext("MAC")], bits(2)[#flagtext("RSV")], bits(16)[DTALEN]
   ),
   caption: [Advanced Transmit Descriptors - Read]
 )
-]
 
-#[
-#set text(size: 7pt)
 #figure(
-  bytefield(bits: 64,
+  bfield(bits: 64,
     bits(64)[RSV],
     bits(28)[RSV], bits(4)[STA] ,bits(32)[RSV]
   ),
   caption: [Advanced Transmit Descriptors - Write-Back]
 )
-]
 #pagebreak()
 
 = verix

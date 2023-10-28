@@ -4,6 +4,12 @@
 // TODO: https://github.com/jomaway/typst-bytefield/pull/6
 #let flagtext(text) = align(center,rotate(270deg,text))
 
+#let bfield(..args) = [
+  #set text(7pt);
+  #bytefield(..args);
+]
+
+
 
 #let buildMainHeader(mainHeadingContent) = {
   [

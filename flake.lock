@@ -136,11 +136,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1696577711,
-        "narHash": "sha256-94VRjvClIKDym1QRqPkX5LTQoAwZ1E6QE/3dWtOXSIQ=",
+        "lastModified": 1698266953,
+        "narHash": "sha256-jf72t7pC8+8h8fUslUYbWTX5rKsRwOzRMX8jJsGqDXA=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "a2eb207f45e4a14a1e3019d9e3863d1e208e2295",
+        "rev": "75a52265bda7fd25e06e3a67dee3f0354e73243c",
         "type": "github"
       },
       "original": {
@@ -302,11 +302,11 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1696605218,
-        "narHash": "sha256-KZs9X3S4RCZ2s3kaxEsOrK5pKCWWc8hQCgjCrjkBqlc=",
+        "lastModified": 1698413888,
+        "narHash": "sha256-p+dljRpAxDC/jkxyGyzSJ7Dgquw8cUE3LvsL7rMIbjk=",
         "owner": "typst",
         "repo": "typst",
-        "rev": "b584617c8d594cf2ba0ee5d3dd4a042eb65fc4a3",
+        "rev": "24a0bd8cfb170a002b5266e4dfd3da007b4fc145",
         "type": "github"
       },
       "original": {
@@ -345,11 +345,11 @@
         "typst-fmt": "typst-fmt"
       },
       "locked": {
-        "lastModified": 1695750033,
-        "narHash": "sha256-6leQfJxpeOz6tdJIoqRvkMTmVki2I5oP/cZK9gaMWSM=",
+        "lastModified": 1697139753,
+        "narHash": "sha256-v7GjAevQEiGNLK/oGT/zdJg9cSzrTXZHxDnnofb9tA4=",
         "owner": "nvarner",
         "repo": "typst-lsp",
-        "rev": "35a7542849e6007a9f8d398864363dcb929f9d5a",
+        "rev": "94af0c146673d001916e231af1db747ecb94d460",
         "type": "github"
       },
       "original": {
