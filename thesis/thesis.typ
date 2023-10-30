@@ -21,6 +21,7 @@
         (key: "MMU", short: "MMU", long: "Memory Management Unit"),
         (key: "IOMMU", short: "IOMMU", long: "Input/Output Memory Management Unit"),
         (key: "VBus", short: "VBus", long: "Virtual Bus"),
+        (key: "MMIO", short: "MMIO", long: "Memory Mapped Input/Output"),
     ),
     supervisor_institution: "Prof. Dr. Matthias Güdemann (HM)",
     supervisor_company: "Claas Lorenz (genua GmbH)",
@@ -75,7 +76,7 @@ Finally we show, using the Kani @BMC, that the driver correctly cooperates with 
 #pagebreak()
 
 = L4.Fiasco and L4Re
-Being a microkernel L4.Fiasco offers barely any functionality on a kernel level.
+As a microkernel L4.Fiasco offers barely any functionality on a kernel level.
 Instead the kernel hands out hardware resources to user space tasks which
 in turn can distribute them further to other tasks. The idea being that we
 can limit the amount of things that a task can interact with to the bare minimum
@@ -540,10 +541,29 @@ fn check_interaction() {
 }
 ```]
 = Intel 82599
-#cite("intel:82599")
-- general PCI setup:
-  - interaction with the PCI config space
-  - map BAR
+The communication with the Intel 82599 network card happens in roughly three phases:
+1. PCI device discovery and setup
+2. Configuration of the actual device
+3. Sending and receiving packets
+In the following chapter we aim to give an overview over these three sections with
+a particular focus on the third one as this is our main verification concern.
+== PCI setup
+A normal driver would initially have to look for the device on its own. However as we are
+on L4, the Io server instead searches for these devices and presents them
+to us through a @VBus. Once we have obtained this handle to our device we can start
+talking to it through the PCI config space.
+
+This config space is in essence a memory like structure that we can read from and write to using
+@IPC calls to the Io server. The beginning (and relevant to us part) of this structure
+can be seen in @pcicfg. The fields that are of most interest to our driver are
+the 6 @BAR ones, they contain addresses of memory regions that are shared between
+our CPU and the device which we can use for @MMIO based configuration.
+
+The datasheet
+of the device @intel:82599 tells us that the relevant @BAR for configuring the device
+is the first one. Thus the first thing the driver has to do is ask the Io server
+to map the memory that @BAR 0 points to into our address space so we can actually
+begin device initialization.
 
 // TODO: MSB: https://github.com/jomaway/typst-bytefield/pull/5
 #figure(
@@ -560,51 +580,26 @@ fn check_interaction() {
     bytes(4)[@BAR 5],
   ),
   caption: [Beginning of the PCI config space]
-)
+) <pcicfg>
 
+== Device Configuration
+After this mapping is done the driver has to follow the initialization procedure
+described in section 4.6.3 of @intel:82599. Almost all of this configuration can
+be done exclusively through the @MMIO based interface that was established previously.
 
-- 82599 specific stuff:
-  - setup procedure:
-    - reset
-    - get link
-    - initialize queues
-  - operation
-    - descriptors
-    - RX / TX queues
+The exception to this is the setup of @DMA based queues which are used to
+transmit and receive packets. The packets do not get sent directly through these
+queues though, instead so called descriptors are written to the queue. They contain
+the address of the actual packet data in the TX case and the address to write
+packet data to in the RX case. This means that the driver has to set up 3 @DMA
+mapped buffers in total:
+- one for the RX queue
+- one for the TX queue
+- one as a memory pool for packet buffers
+After this setup is done the actual communication with the network can begin.
+The details of this queue based communication as well as its verification are
+discussed in @mix as they are the main investigation point of this work.
 
-// TODO: MSB: https://github.com/jomaway/typst-bytefield/pull/5
-
-#figure(
-  bfield(bits: 64,
-    bits(64)[Packet Buffer Address],
-    bits(63)[Header Buffer Address], bit[#flagtext("DD")],
-  ),
-  caption: [Advanced Receive Descriptors - Read]
-)
-
-#figure(
-  bfield(bits: 64,
-    bits(32)[RSS Hash], bit[#flagtext("SPH")], bits(10)[HDR_LEN], bits(4)[RSCCNT], bits(13)[Packet Type], bits(4)[RSST],
-    bits(16)[VLAN Tag], bits(16)[PKT_LEN], bits(12)[Extended Error], bits(20)[Extended Status]
-  ),
-  caption: [Advanced Receive Descriptors - Write-Back]
-)
-
-#figure(
-  bfield(bits: 64,
-    bits(64)[Packet Buffer Address],
-    bits(18)[PAYLEN], bits(6)[POPTS], bit[#flagtext("CC")], bits(3)[IDX], bits(4)[STA], bits(8)[DCMD], bits(4)[DTYP], bits(2)[#flagtext("MAC")], bits(2)[#flagtext("RSV")], bits(16)[DTALEN]
-  ),
-  caption: [Advanced Transmit Descriptors - Read]
-)
-
-#figure(
-  bfield(bits: 64,
-    bits(64)[RSV],
-    bits(28)[RSV], bits(4)[STA] ,bits(32)[RSV]
-  ),
-  caption: [Advanced Transmit Descriptors - Write-Back]
-)
 #pagebreak()
 
 = verix
@@ -626,7 +621,7 @@ fn check_interaction() {
   - follows the datasheet more anally in some sections
 - show the verix side of the RX/TX procedure, in particular, the memory management
   - This will use the Rc/RefCell stuff that we introduced above
-== mix
+== mix <mix>
 - explain the model itself
 - how the model hooks into verix
 - What does it mean for our driver to be correct? I think the answer is 3 main properties
@@ -654,43 +649,41 @@ fn check_interaction() {
         - doesn't panic
         - processes packets correctly
         - ends up in a valid queue configuration
-    - How:
-      - in order to check whether packets were correctly transmitted we:
-        - inject as many as required and possible of them into the RX descriptor queue + the shared memory buffer
-        // TODO: make this idea more precise
-        - assert that after a run the correct chunk (depending on the state of the queue if it was previously filled with
-          packets already we get some of those as well, the semantics of "filling" the queue have to be a little more elaborate
-          here, basically the initial queue has 0-n packets and then we add m packets (up to a max of n + M < num_valid_rx_descriptors) on top)
-          of packets ended up in the TX queue (if possible) and the pointer was advanced
-      - The system state as far as I am concerned consists of:
-        - The RX/TX queue data structures on the OS side. The main thing of interest here is:
-          - the rx/tx used buffers
-          - the rx/tx index
-          - the tx clean index
-        - The mempool on the OS side. The main thing of interest here is:
-          - the free list
-        - The RX/TX queue state on the NIC side. The main thing of interest here is:
-          - RX/TX head/tail pointers
-        - The DMA state:
-          - the descriptor queues + the packet buffer
-      - I claim that we are in a valid state if:
-        - The list of mempool buffers in the used lists of RX/TX and in the free list of allocators has no duplicates and contains all mempools
-        - The TX queue (both on the OS and the NIC side) is in a valid state, that is:
-          - TODO
-        - The RX queue (both on the OS and the NIC side) is in a valid state, that is:
-          - Q[RDH..RDT] = valid rx_read_desc
-          - Q[RX_IDX..RDH] = valid rx_wb_desc
-          - valid rx_read_desc means:
-            - Packet Buffer Address is the pointer corresponding to the buffer
-            - DD = 0
-          - valid rx_wb_desc means:
-            - DD = 1
-            - EOP = 1
-            - PKT_LEN is correct
-
+    - How: TODO: Paraphrase from implementation
 - note that it is particularly important to split stuff up, throwing the entire driver
   into the model checker at once is not viable.
+// TODO: MSB: https://github.com/jomaway/typst-bytefield/pull/5
+#figure(
+  bfield(bits: 64,
+    bits(64)[Packet Buffer Address],
+    bits(63)[Header Buffer Address], bit[#flagtext("DD")],
+  ),
+  caption: [Advanced Receive Descriptors - Read]
+) <adv_rx_read>
 
+#figure(
+  bfield(bits: 64,
+    bits(32)[RSS Hash], bit[#flagtext("SPH")], bits(10)[HDR_LEN], bits(4)[RSCCNT], bits(13)[Packet Type], bits(4)[RSST],
+    bits(16)[VLAN Tag], bits(16)[PKT_LEN], bits(12)[Extended Error], bits(20)[Extended Status]
+  ),
+  caption: [Advanced Receive Descriptors - Write-Back]
+) <adv_rx_wb>
+
+#figure(
+  bfield(bits: 64,
+    bits(64)[Packet Buffer Address],
+    bits(18)[PAYLEN], bits(6)[POPTS], bit[#flagtext("CC")], bits(3)[IDX], bits(4)[STA], bits(8)[DCMD], bits(4)[DTYP], bits(2)[#flagtext("MAC")], bits(2)[#flagtext("RSV")], bits(16)[DTALEN]
+  ),
+  caption: [Advanced Transmit Descriptors - Read]
+) <adv_tx_read>
+
+#figure(
+  bfield(bits: 64,
+    bits(64)[RSV],
+    bits(28)[RSV], bits(4)[STA] ,bits(32)[RSV]
+  ),
+  caption: [Advanced Transmit Descriptors - Write-Back]
+) <adv_tx_wb>
 #pagebreak()
 
 = Conclusion
