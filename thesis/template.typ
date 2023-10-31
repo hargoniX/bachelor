@@ -1,26 +1,26 @@
-#import "@preview/glossarium:0.1.0": make-glossary, print-glossary, gls, glspl 
-#import "@preview/bytefield:0.0.1": bytefield, bit, bits, bytes
+#import "@preview/glossarium:0.1.0": make-glossary, print-glossary, gls, glspl
+#import "@preview/bytefield:0.0.2": bytefield, bit, bits, bytes, flagtext
 
 // TODO: https://github.com/jomaway/typst-bytefield/pull/6
-#let flagtext(text) = align(center,rotate(270deg,text))
+//#let flagtext(text) = align(center,rotate(270deg,text))
 
 #let bfield(..args) = [
   #set text(7pt);
-  #bytefield(..args);
+  #bytefield(msb_first: true, ..args);
 ]
 
 
 
 #let buildMainHeader(mainHeadingContent) = {
   [
-    #align(center, smallcaps(mainHeadingContent)) 
+    #align(center, smallcaps(mainHeadingContent))
     #line(length: 100%)
   ]
 }
 
 #let buildSecondaryHeader(mainHeadingContent, secondaryHeadingContent) = {
   [
-    #smallcaps(mainHeadingContent)  #h(1fr)  #emph(secondaryHeadingContent) 
+    #smallcaps(mainHeadingContent)  #h(1fr)  #emph(secondaryHeadingContent)
     #line(length: 100%)
   ]
 }
@@ -165,7 +165,7 @@
     body
 
     pagebreak(weak: true)
-    bibliography(bibliography-file, title: [References]) 
+    bibliography(bibliography-file, title: [References])
 
 
     pagebreak(weak: true)
@@ -177,7 +177,7 @@
 
     heading("List of Figures", level: 2)
     outline(
-      title: none, 
+      title: none,
       depth: 3, indent: true,
       target: figure.where(kind: image),
     )

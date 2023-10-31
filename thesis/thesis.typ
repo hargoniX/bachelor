@@ -54,9 +54,9 @@ While verifying network stacks and applications requires substantial resources d
 // Summarize why nobody else has adequately answered the research question yet.
 To our knowledge, there do not exist network drivers whose interaction with the @NIC itself has been formally verified.
 Instead, the focus is usually put on other issues that arise in driver implementation:
-- #cite("witowski2007drivers") and #cite("ball2004slam") are mostly concerned with the driver interactions with the rest of the kernel
+- #cite(<witowski2007drivers>) and #cite(<ball2004slam>) are mostly concerned with the driver interactions with the rest of the kernel
   as well as the absence of C-related issues
-- #cite("more2021hol4drivers") implements a verified monitor for interactions of a real driver with the @NIC instead of verifying the driver itself. While this means that bad interactions with the hardware can now be detected at runtime this still has to be done in a way that is
+- #cite(<more2021hol4drivers>) implements a verified monitor for interactions of a real driver with the @NIC instead of verifying the driver itself. While this means that bad interactions with the hardware can now be detected at runtime this still has to be done in a way that is
 preventing the driver from its regular operations which usually means a crash.
 
 // Explain, in one sentence, how you tackled the research question.
@@ -64,7 +64,7 @@ In this thesis, we are show that formally verifying the interaction of a driver 
 
 // How did you go about doing the research that follows from your big idea?
 To show that the concept is viable in practice we implement a driver for the widely used Intel 82559ES @NIC.
-This is done on the L4.Fiasco #cite("l4doc") microkernel so misbehavior of the driver can barely affect the system as a whole in the first place.
+This is done on the L4.Fiasco #cite(<l4doc>) microkernel so misbehavior of the driver can barely affect the system as a whole in the first place.
 
 On top of that we are use the Rust programming language which guarantees additional safety properties out of the box.
 The driver and model themselves use a custom Rust DSL in the spirit of svd2rust to make correct peripheral access easier.
@@ -90,7 +90,7 @@ kernel and allows us to communicate with that object in a way. The difference to
 a file descriptor is that any object that we get from the kernel is described by
 a capability: threads, access to hardware, @IPC gates to other tasks etc.
 #figure(
-  image("figures/l4-caps-basic.png", width: 80%),
+  image("figures/l4-caps-basic.svg", width: 80%),
   caption: [Capabilities],
 ) <l4caps>
 
@@ -130,7 +130,7 @@ the Io server. Instead of allowing processes with such a capability to obtain ar
 hardware resources each client is granted its own limited view of the hardware in the form
 of a so called @VBus.
 #figure(
-  image("figures/io-overview.png", width: 80%),
+  image("figures/io-overview.svg", width: 80%),
   caption: [Io architecture],
 ) <l4io>
 As we can see in @l4io this allows us to limit the hardware that a task can see to the
@@ -146,7 +146,7 @@ due to three key factors:
 
 In this section we aim to give an overview over the important Rust features
 that we use. For a more complete overview of the Rust language
-refer to #cite("rustbook").
+refer to #cite(<rustbook>).
 
 == Ownership
 All variables in Rust are immutable by default, hence the following program does
@@ -413,12 +413,12 @@ Value: 1
 ```
 The precise workings of the declarative macro syntax and all the kinds
 of syntax that can be matched upon are far out of scope for this work so we refer to
-#cite("rustmacrobook") for a more detailed introduction.
+#cite(<rustmacrobook>) for a more detailed introduction.
 = Kani
-Kani #cite("kani") is the @BMC that we use to verify the Rust code.
+Kani #cite(<kani>) is the @BMC that we use to verify the Rust code.
 It is implemented as a code generation backend for the Rust compiler. However
 instead of generating executable code, it generates an intermediate representation
-of @CBMC #cite("cbmc"). While @CBMC is originally intended for verifying C code,
+of @CBMC #cite(<cbmc>). While @CBMC is originally intended for verifying C code,
 by using this trick Kani is able to make use of all the features that already
 exist in @CBMC. By default Kani checks the following properties of a given piece
 of Rust code:
@@ -565,7 +565,6 @@ is the first one. Thus the first thing the driver has to do is ask the Io server
 to map the memory that @BAR 0 points to into our address space so we can actually
 begin device initialization.
 
-// TODO: MSB: https://github.com/jomaway/typst-bytefield/pull/5
 #figure(
   bfield(
     bytes(2)[Device ID], bytes(2)[Vendor ID],
@@ -610,11 +609,11 @@ discussed in @mix as they are the main investigation point of this work.
   - this will reference all of the trait stuff from above
 - show the MMIO macro
 == pc-hal-l4
-#cite("humendal4")
+#cite(<humendal4>)
 - show how traits map to l4 concepts
 - custom Drop to free resources in the kernel
 == verix
-- ixy knockoff: #cite("emmerichixy") #cite("ellmannixy")
+- ixy knockoff: #cite(<emmerichixy>) #cite(<ellmannixy>)
 - main differences:
   - written against a generic interface (implemented for L4 right now)
   - uses far less unsafe for memory-mapped structures
@@ -652,7 +651,6 @@ discussed in @mix as they are the main investigation point of this work.
     - How: TODO: Paraphrase from implementation
 - note that it is particularly important to split stuff up, throwing the entire driver
   into the model checker at once is not viable.
-// TODO: MSB: https://github.com/jomaway/typst-bytefield/pull/5
 #figure(
   bfield(bits: 64,
     bits(64)[Packet Buffer Address],
