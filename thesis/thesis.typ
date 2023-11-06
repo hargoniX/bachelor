@@ -56,11 +56,12 @@ To our knowledge, there do not exist network drivers whose interaction with the 
 Instead, the focus is usually put on other issues that arise in driver implementation:
 - #cite(<witowski2007drivers>) and #cite(<ball2004slam>) are mostly concerned with the driver interactions with the rest of the kernel
   as well as the absence of C-related issues
-- #cite(<more2021hol4drivers>) implements a verified monitor for interactions of a real driver with the @NIC instead of verifying the driver itself. While this means that bad interactions with the hardware can now be detected at runtime this still has to be done in a way that is
-preventing the driver from its regular operations which usually means a crash.
+- #cite(<more2021hol4drivers>) implements a verified monitor for interactions of a real driver with the @NIC instead of verifying the driver itself.
+   While this means that bad interactions with the hardware can now be detected at runtime this still has to be done in a way that is
+  preventing the driver from its regular operations which usually means a crash.
 
 // Explain, in one sentence, how you tackled the research question.
-In this thesis, we are show that formally verifying the interaction of a driver with the @NIC is possible by implementing a model of the target hardware and using @BMC to prove that they cooperate correctly.
+In this thesis, we show that formally verifying the interaction of a driver with the @NIC is possible by implementing a model of the target hardware and using @BMC to prove that they cooperate correctly.
 
 // How did you go about doing the research that follows from your big idea?
 To show that the concept is viable in practice we implement a driver for the widely used Intel 82559ES @NIC.
@@ -414,9 +415,35 @@ Value: 1
 The precise workings of the declarative macro syntax and all the kinds
 of syntax that can be matched upon are far out of scope for this work so we refer to
 #cite(<rustmacrobook>) for a more detailed introduction.
-= Kani
-Kani #cite(<kani>) is the @BMC that we use to verify the Rust code.
-It is implemented as a code generation backend for the Rust compiler. However
+= Formal Verification in Rust
+To our knowledge there do currently exist three actively maintained and reasonably
+popular tool for (semi)-automated verification of Rust code:
+- Kani #cite(<kani>)
+- Creusot #cite(<creusot>)
+- Prusti #cite(<prusti>)
+A key feature for our verification effort is the ability to verify `unsafe` code
+reasonably easy. According to its issue tracker, Creusot is currently not capable
+of verifying `unsafe` code at all #footnote[https://github.com/xldenis/creusot/issues/36].
+This already rules it out completely for us. With Prusti the tool is not incapable
+of processing `unsafe` code but its automation capabilities are very limited.
+For example the following example cannot be verified by Prusti automatically:
+#sourcecode[```rust
+fn test() {
+    let mut test : Vec<u8> = Vec::new();
+    test.push(0);
+    unsafe {
+        test.as_mut_ptr().write(10);
+        if test.as_ptr().read() != 10 {
+            // This panic cannot be hit
+            panic!("Ahhh");
+        }
+    }
+}
+```]
+Kani on the other hand is fully able to verify these and much more complicated examples,
+which made us pick it for this verification effort.
+
+Kani is implemented as a code generation backend fo the Rust compiler. However
 instead of generating executable code, it generates an intermediate representation
 of @CBMC #cite(<cbmc>). While @CBMC is originally intended for verifying C code,
 by using this trick Kani is able to make use of all the features that already
@@ -431,7 +458,7 @@ of Rust code:
 - absence of violations of user-added assertions
 
 For example the following Rust code would crash if `a` has length $0$ or if `i`
-is sufficiently large enough:
+is sufficiently large:
 #sourcecode[```rust
 fn get_wrapped(a: &[u32], i: usize) -> u32 {
     return a[i % a.len() + 1];
@@ -693,3 +720,25 @@ discussed in @mix as they are the main investigation point of this work.
 - turn pc-hal into something general enough to run as e.g. a Linux userspace driver
 - add a virtio backend to make it useful for other applications on L4
   - potential for virtio verification as already partially done with kani
+
+= Meeting Anmerkungen
+- DONE: L4 und Intel 82599 context reicht aus, nicht notwendig weiter auszuführen
+- Verweis auf meinen Code als Github statt im Anhang
+- kani:
+  - DONE: Diskussion alternativer prover
+    - DONE: kani
+    - DONE: creusot
+    - DONE: prusti
+  - kani capabilities weiter ausformulieren
+  - DONE: kapitel 4 zu "verifikation in rust" ausweiten
+- verix:
+  - was ist der Aufwand
+  - was genau hat man verifiziert
+  - wie lange braucht kani, statistiken
+  - vollständig oder nur teilweise bewiesene Funktionen?
+  - statisken ueber welche funktionen ich verifiziert habe
+  - andere solver ausprobieren:
+    - gluecose
+    - minisat
+    - kissat
+    - other kani solvers?
