@@ -22,6 +22,8 @@
         (key: "IOMMU", short: "IOMMU", long: "Input/Output Memory Management Unit"),
         (key: "VBus", short: "VBus", long: "Virtual Bus"),
         (key: "MMIO", short: "MMIO", long: "Memory Mapped Input/Output"),
+        (key: "WG", short: "WG", long: "Working Group"),
+        (key: "MTU", short: "MTU", long: "Maximum Transmission Unit"),
     ),
     supervisor_institution: "Prof. Dr. Matthias Güdemann (HM)",
     supervisor_company: "Claas Lorenz (genua GmbH)",
@@ -608,7 +610,7 @@ begin device initialization.
   caption: [Beginning of the PCI config space]
 ) <pcicfg>
 
-== Device Configuration
+== Device Configuration <devicecfg>
 After this mapping is done the driver has to follow the initialization procedure
 described in section 4.6.3 of @intel:82599. Almost all of this configuration can
 be done exclusively through the @MMIO based interface that was established previously.
@@ -624,29 +626,300 @@ mapped buffers in total:
 - one as a memory pool for packet buffers
 After this setup is done the actual communication with the network can begin.
 The details of this queue based communication as well as its verification are
-discussed in @mix as they are the main investigation point of this work.
+discussed in @verix and @mix as they are the main investigation point of this work.
 
-#pagebreak()
+= Verifying the driver
+In this chapter we lay out the rough architecture that allows us to run the driver
+both on L4 and on a model of the hardware for verification purposes. Afterwards
+we formalize the notion of what it means for our driver to be correct and lay
+out how we verified these properties using Kani.
 
-= verix
 == Architecture
-- image of how components connect
-== pc-hal
-- show the traits
-  - this will reference all of the trait stuff from above
-- show the MMIO macro
-== pc-hal-l4
-#cite(<humendal4>)
-- show how traits map to l4 concepts
-- custom Drop to free resources in the kernel
-== verix
-- ixy knockoff: #cite(<emmerichixy>) #cite(<ellmannixy>)
-- main differences:
-  - written against a generic interface (implemented for L4 right now)
-  - uses far less unsafe for memory-mapped structures
-  - follows the datasheet more anally in some sections
-- show the verix side of the RX/TX procedure, in particular, the memory management
-  - This will use the Rc/RefCell stuff that we introduced above
+#figure(
+  image("figures/drawio/verix-arch.drawio.pdf.svg", width: 80%),
+  caption: [Architecture]
+) <arch>
+The rough architecture for the project is laid out in @arch. The end product is
+an application called `verix-fwd` which mirrors received packets back to the sender.
+`verix-fwd` is mainly powered by `verix-lib` which is the actual driver and the subject
+of our verification efforts. `verix-lib` in turn does not directly talk to the hardware
+but rather through an abstract interface called `pc-hal` which has two implementations:
+1. `pc-hal-l4` this is the one we actually used in production on the hardware. It implements
+   the abstract interface provided by `pc-hal` by calling into responsible the L4 APIs.
+   It is discussed in @pc-hal
+2. `mix`, the "model ix". It provides a software model of the @NIC that implements the `pc-hal`
+    abstract interface. When plugged into `verix-lib` instead of `pc-hal-l4` we can use Kani
+    to verify properties about the interaction of the driver with the modeled @NIC.
+    It is discussed in @mix.
+== pc-hal <pc-hal>
+The main job of `pc-hal` is to provide a trait based abstraction over the L4 hardware related
+APIs in order to allow us to plug `mix` in. The design is spirit of the
+Rust Embedded @WG's `embedded-hal` (TODO: cite). In particular we provide abstractions for:
+- @DMA mappings
+- @VBus interface
+- PCI config space
+- raw pointer based @MMIO interfaces
+Demonstrating how all of these interfaces work would be out of scope for this work
+so we instead only give an exemplary view of the PCI config space abstraction.
+It is implemented as a single trait, `FaillibleMemoryInterface32`:
+#sourcecode[```rust
+pub trait FailibleMemoryInterface32 {
+    type Error;
+    type Addr;
+
+    fn write8(&mut self, offset: Self::Addr, val: u8) -> Result<(), Self::Error>;
+    fn write16(&mut self, offset: Self::Addr, val: u16) -> Result<(), Self::Error>;
+    fn write32(&mut self, offset: Self::Addr, val: u32) -> Result<(), Self::Error>;
+    fn read8(&self, offset: Self::Addr) -> Result<u8, Self::Error>;
+    fn read16(&self, offset: Self::Addr) -> Result<u16, Self::Error>;
+    fn read32(&self, offset: Self::Addr) -> Result<u32, Self::Error>;
+}
+```]
+The interface has to be designed in a faillible way because as discussed previously
+the communication with the PCI config space happens through @IPC, which can return errors.
+In addition to that we also abstract over the address data type in order to possibly
+allow more diverse usage of this trait in other applications if they ever arise.
+The reason that both of the type parameters are implemented as associated types instead
+of generic ones, is that the specific types are then known at the instances of the trait
+already. This allows us to construct specific error values and do proper computation
+with the offset in the instance, instead of having to abstract further over error kinds
+and address manipulation.
+
+While the majority of the interfaces provided by `pc-hal` could probably be made sufficiently
+general to fit multiple platforms, they are currently very much designed with the L4 interface
+in mind. This makes the `pc-hal-l4` implementation of the traits mostly a thin wrapper around 
+the Rust L4 APIs. These APIs were initially developed in #cite(<humendal4>) and extended by
+us in order to support more hardware related things in addition.
+
+In addition to the traits `pc-hal` also provides a few utility functions that work
+on top of them. The most notable one here is a type safe @MMIO abstraction in the spirit
+of the Rust Embedded @WG's `svd2rust` tool (TODO: cite). `svd2rust` allows Rust Embedded developers
+to automatically generate type safe implements for @MMIO interfaces of ARM and RISC-V chips.
+The need for such a type safe API arose because interacting with an @MMIO interface in Rust
+directly uses direct pointer manipulation together with lots of constants and bit operations:
+#sourcecode[```rust
+pub const IXGBE_CTRL: u32 = 0x00000;
+pub const IXGBE_CTRL_LNK_RST: u32 = 0x00000008;
+pub const IXGBE_CTRL_RST: u32 = 0x04000000;
+pub const IXGBE_CTRL_RST_MASK: u32 = IXGBE_CTRL_LNK_RST | IXGBE_CTRL_RST;
+
+fn set_reg32(&self, reg: u32, value: u32) {
+    unsafe {
+        ptr::write_volatile(
+            (self.addr as usize + reg as usize) as *mut u32,
+            value
+        );
+    }
+}
+
+self.set_reg32(IXGBE_CTRL, IXGBE_CTRL_RST_MASK);
+```]
+
+
+`svd2rust` provides this API by automatically generating code from an XML based interface description, 
+the SVD files. While such files are not available for the Intel 82559 we end up generating an
+API that works very similarly to the `svd2rust` ones. However our implementation is not file to file converter
+but instead implemented as a declarative Rust macro. The user interface of our macro looks as follows:
+
+#sourcecode[```rust
+mm2types! {
+    Intel82559ES Bit32 {
+        Bar0 {
+            ctrl @ 0x000000 RW {
+                reserved0 @ 1:0,
+                pcie_master_disable @ 2,
+                lrst @ 3,
+                reserved1 @ 25:4,
+                rst @ 26,
+                reserved2 @ 31:27
+            }
+        }
+    }
+}
+```]
+We declare a device called `Intel82559ES` which has @MMIO registers of size 32 bit.
+This device has an @MMIO interface called `Bar0` which contains a register `ctrl` at offset `0x0`
+which is readable and writable and has a number of fields at certain bit ranges.
+The equivalent of the above register access looks as follows in our API:
+#sourcecode[```rust
+bar0.ctrl().modify(|_, w| w.lrst(1).rst(1));
+```]
+While this involves a closure and several function calls, all of the operations here end up
+getting inlined and optimized by the compiler. This optimization is so good, that our code
+ends up producing the same assembly code as the pointer based interface above. Describing
+how the entire `svd2rust` style API works is out of scope here but conceputally
+described at (TODO: link to docs)
+
+In addition to this, the macro also supports 64 bit based @MMIO which we use to generate
+type safe interfaces for the packet descriptors. The way this is usually done looks
+as follows:
+#sourcecode[```rust
+#[repr(C)]
+pub struct ixgbe_adv_rx_desc_read {
+    pub pkt_addr: u64,
+    pub hdr_addr: u64,
+}
+
+ptr::write_volatile(
+    &mut (*desc).pkt_addr as *mut u64,
+    phys_addr as u64,
+);
+```]
+Which, while already typed to a degree, still allows for quite a bit of error compared
+to the intrinsically typed version that our macro provides.
+
+== verix <verix>
+As mentioned above verix is the code that actually interacts with the hardware and thus
+the code that we are actually interested in verifying. The driver itself is largely
+based on the ixy driver, originally from #cite(<emmerichixy>) and later ported to Rust in
+#cite(<ellmannixy>). The three main differences between our port and the Rust original
+are:
+1. the abstract interface instead of the Linux userspace APIs 
+2. a reduction of unsafe code from the driver itself, by generating the safe @MMIO APIs
+3. we only ended up porting the polling variant of the driver, this means that our setup
+   uses no interrupts.
+
+Since the initial device setup is very linear, we won't go into the details of how the driver performs these steps.
+The packet receive and transmit procedure one the other hand are more involved. 
+We begin by explaining the receive procedure as it is slightly simpler than the transmit one.
+
+=== Receiving packets
+As mentioned in <devicecfg> packet receiving is done through a @DMA mapped queue.
+This queue is implemented as a ring buffer in memory whose state is determined by 4
+@MMIO mapped registers:
+1. RDBAL and RDBAH, they contain the low and high half of the base address
+2. RDLEN, the length of the buffer behind the base address in bytes
+3. RDH and RDT which are the head and tail of the queue that is simulated on
+   top of this ring buffer
+An example state of an RX queue, configured with 8 slots, might thus look like this:
+#figure(
+  image("figures/drawio/rx-queue.drawio.pdf.svg", width: 70%),
+  caption: [Example RX queue]
+) <rx-queue-1>
+
+According to Section 7.1 of #cite(<intel:82599>) this state is to be interpret as follows:
+1. The slots $1, 2, 3, 4$ (the interval $["RDH", "RDT")$) are owned by the hardware and contain so called read descriptors.
+2. The slots $5 , 6, 7, 0$ (the interval $["RDT", "RDH")$) are owned by the software and are either being currently
+   processed or there is currently no packet buffer free to turn them back into read descriptors.
+Both of these descriptor types are $2 dot.c 64$ bit value long structures.
+Read descriptors, as can be seen in @adv_rx_read, are very basic. They consist of three parts:
+1. The Packet Buffer Address, this is a pointer to the @DMA mapped slice of memory that we expect
+   the hardware to write a packet to.
+2. The Header Buffer Address, this can be used for additional hardware features that are not in use by us.
+3. The DD bit. This stands for Descriptor Done and is present in both the read and the write back descriptor.
+   It is set by the hardware to indicate that this descriptor has been processed.
+
+Once the hardware receives a packet, it places its data at the Packet Buffer Address of the first free
+read descriptor and sets the DD bit. After that is done a write back descriptor as described in
+@adv_rx_wb is put into the consumed slot. This descriptor kind contains a lot of meta information,
+most of which concerns more advanced features. The fields that are relevant in the basic
+configuration setup of verix are:
+1. The packet length which contains how many bytes of the buffer in the read descriptor were actually used for a received packet
+2. The extended status register which contains two fields that are relevant to us:
+   1. The EOP bit, if it is set this indicates an end of a packet. This is relevant because the @NIC can in theory
+      be configured to split up packets across multiple descriptors. As we don't use this feature we expect EOP to
+      always be set
+   2. The DD bit at the same position as the DD bit in the read descriptor and serves the same purpose
+
+After this procedure is done the hardware advances RDH, possibly overflowing back to the start
+of the ring buffer while doing so.
+
+#figure(
+  bfield(bits: 64,
+    bits(64)[Packet Buffer Address],
+    bits(63)[Header Buffer Address], bit[#flagtext("DD")],
+  ),
+  caption: [Advanced Receive Descriptors - Read]
+) <adv_rx_read>
+
+#figure(
+  bfield(bits: 64,
+    bits(32)[RSS Hash], bit[#flagtext("SPH")], bits(10)[HDR_LEN], bits(4)[RSCCNT], bits(13)[Packet Type], bits(4)[RSST],
+    bits(16)[VLAN Tag], bits(16)[PKT_LEN], bits(12)[Extended Error], bits(20)[Extended Status]
+  ),
+  caption: [Advanced Receive Descriptors - Write-Back]
+) <adv_rx_wb>
+
+The way this exchange of buffers is implemented in verix is as follows. The driver maintains three additional things for
+itself:
+1. A mini allocator that manages the buffers in the @DMA mapped packet buffer array. It can request memory in buffers of 2048
+   byte, which should be sufficient for all packets as they cannot exceed the @MTU of 1500 byte.
+2. An array with the same amount of slots as the ring buffer. Here it saves which buffer is used for which slot in the
+   ring buffer as this information is not maintained by the write back descriptor.
+3. The `rx_index`, it contains the location that the driver will read the next packet from. This allows it to simply poll the
+   DD bit of the descriptor at `rx_index` in order to figure out whether a packet was received.
+
+In addition to this the driver maintains two important invariants:
+1. `rx_index` is always $"RDT" + 1$.
+2. It strengthens the assumption of the hardware that all descriptors in the interval $["RDH", "RDT")$ contain
+   read descriptors to the interval $["RDH", "RDT"]$
+
+These two assumptions allow for the receive operation of one packet to be implemented as follows:
+1. Poll until DD at `rx_index` is set to 1.
+2. Remember the buffer that was used at `rx_index` to return it later.
+3. Replace the buffer remembered for `rx_index` with a fresh one and write its meta information as a read descriptor
+   with DD set to 0.
+4. As the descriptor at RDT is already initialized as a read one simply advance RDT and the `rx_index`.
+
+On top of this the driver implements a batching mechanism which repeats the procedure up to a certain batch size in
+order to increase performance.
+
+=== Transmitting packets
+The structure of the TX queue is the same as the RX one, except that the registers are called TDBAL, TDBAH, TDLEN, TDH
+and TDT. However the structure of the descriptors themselves is drastically different. The read ones contain a large
+amount of meta information this time as can be seen in @adv_tx_read, the relevant pieces for our basic configuration
+are:
+1. The Packet Buffer Address, it points to the data that we wish to send
+2. They PAYLEN, it contains how large the packet is as a whole. As we again only use single descriptor packets this
+   has the same value as DTALEN
+3. The DTYP contains what kind of descriptor we are using since the hardware also supports a legacy format. This is always
+   set to the advanced format in our driver.
+4. The DCMD is a bit vector for a series of options, the relevant ones for our configuration are:
+   1. DEXT which indicates that we use advanced descriptors as well
+   2. RS which makes the hardware report the status of the descriptor by setting the DD bit
+   3. IFCS which makes the hardware compute the Ethernet CRC frame checksum for us 
+   4. EOP which has the same semantics as in receive descriptors
+5. The STA which as a single relevant field, the DD bit with the same semantics as in receive descriptors
+
+The procedure to send a packet is very similar to the receive one, we insert a read descriptor at the beginning of the
+section that is owned by the software and advance the RDT. Eventually the hardware picks up on the new descriptor,
+processes it and writes a write back descriptor with DD set. The transmit write back descriptors have a much simpler structure,
+as can be seen in @adv_tx_wb, it only contains a STA field with the same structure as STA in the read descriptors.
+
+#figure(
+  bfield(bits: 64,
+    bits(64)[Packet Buffer Address],
+    bits(18)[PAYLEN], bits(6)[POPTS], bit[#flagtext("CC")], bits(3)[IDX], bits(4)[STA], bits(8)[DCMD], bits(4)[DTYP], bits(2)[#flagtext("MAC")], bits(2)[#flagtext("RSV")], bits(16)[DTALEN]
+  ),
+  caption: [Advanced Transmit Descriptors - Read]
+) <adv_tx_read>
+
+#figure(
+  bfield(bits: 64,
+    bits(64)[RSV],
+    bits(28)[RSV], bits(4)[STA] ,bits(32)[RSV]
+  ),
+  caption: [Advanced Transmit Descriptors - Write-Back]
+) <adv_tx_wb>
+
+
+There is one considerable difference compared to the receive procedure, the buffers have to be freed after the
+hardware marked them as processed. For this reason the transmit function maintains 4 additional values:
+1. The mini allocator that is shared with the receive part
+2. An array with buffers similar to the one in the receive part
+3. The `tx_index` which points to the next location we write a packet to.
+4. The `clean_index` which marks the location of the next descriptor that we need to free
+
+The driver only maintains one invariant on this state, `tx_index` is always equal to TDT.
+The algorithm for transmitting a packet is unsurprisingly also very similar to the receive one:
+1. Try to free as many packets as possible by freeing all buffers from `clean_index` to the first one that doesn't have DD set.
+2. Insert the read descriptor at `tx_index`.
+3. Replace the buffer that we remember for `tx_index` with the one that was just placed
+4. Advance TDT and `tx_index`.
+
+Just like the receive algorithm the transmit one also implements a batching procedure on top of this by repeating steps
+2-4 up to a certain batch size.
+
 == mix <mix>
 - explain the model itself
 - how the model hooks into verix
@@ -678,37 +951,6 @@ discussed in @mix as they are the main investigation point of this work.
     - How: TODO: Paraphrase from implementation
 - note that it is particularly important to split stuff up, throwing the entire driver
   into the model checker at once is not viable.
-#figure(
-  bfield(bits: 64,
-    bits(64)[Packet Buffer Address],
-    bits(63)[Header Buffer Address], bit[#flagtext("DD")],
-  ),
-  caption: [Advanced Receive Descriptors - Read]
-) <adv_rx_read>
-
-#figure(
-  bfield(bits: 64,
-    bits(32)[RSS Hash], bit[#flagtext("SPH")], bits(10)[HDR_LEN], bits(4)[RSCCNT], bits(13)[Packet Type], bits(4)[RSST],
-    bits(16)[VLAN Tag], bits(16)[PKT_LEN], bits(12)[Extended Error], bits(20)[Extended Status]
-  ),
-  caption: [Advanced Receive Descriptors - Write-Back]
-) <adv_rx_wb>
-
-#figure(
-  bfield(bits: 64,
-    bits(64)[Packet Buffer Address],
-    bits(18)[PAYLEN], bits(6)[POPTS], bit[#flagtext("CC")], bits(3)[IDX], bits(4)[STA], bits(8)[DCMD], bits(4)[DTYP], bits(2)[#flagtext("MAC")], bits(2)[#flagtext("RSV")], bits(16)[DTALEN]
-  ),
-  caption: [Advanced Transmit Descriptors - Read]
-) <adv_tx_read>
-
-#figure(
-  bfield(bits: 64,
-    bits(64)[RSV],
-    bits(28)[RSV], bits(4)[STA] ,bits(32)[RSV]
-  ),
-  caption: [Advanced Transmit Descriptors - Write-Back]
-) <adv_tx_wb>
 #pagebreak()
 
 = Conclusion

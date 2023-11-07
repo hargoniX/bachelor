@@ -25,6 +25,8 @@
         nativeBuildInputs = [
           pkgs.typst-lsp
           pkgs.typst
+          pkgs.drawio
+          pkgs.pdf2svg
         ];
       };
     in {
