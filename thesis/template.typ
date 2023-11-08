@@ -1,15 +1,20 @@
 #import "@preview/glossarium:0.1.0": make-glossary, print-glossary, gls, glspl
 #import "@preview/bytefield:0.0.2": bytefield, bit, bits, bytes, flagtext
+#import "@preview/ctheorems:1.0.0": *
 
-// TODO: https://github.com/jomaway/typst-bytefield/pull/6
-//#let flagtext(text) = align(center,rotate(270deg,text))
+#let theorem = thmplain("theorem", "Theorem")
+#let definition = thmplain("definition", "Definition")
+#let proof = thmplain(
+  "proof",
+  "Proof",
+  base: "theorem",
+  bodyfmt: body => [#body #h(1fr) $square$]
+).with(numbering: none)
 
 #let bfield(..args) = [
   #set text(7pt);
   #bytefield(msb_first: true, ..args);
 ]
-
-
 
 #let buildMainHeader(mainHeadingContent) = {
   [
@@ -95,6 +100,7 @@
       v(12pt, weak: true)
       strong(it)
     }
+    show: thmrules
 
     // Logo
     v(5%)

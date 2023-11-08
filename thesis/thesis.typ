@@ -1,4 +1,4 @@
-#import "template.typ": thesis, bfield, bit, bits, bytes, flagtext
+#import "template.typ": thesis, bfield, bit, bits, bytes, flagtext, theorem, definition, proof
 #import "@preview/codelst:1.0.0": sourcecode
 
 #show: thesis.with(
@@ -921,36 +921,241 @@ Just like the receive algorithm the transmit one also implements a batching proc
 2-4 up to a certain batch size.
 
 == mix <mix>
-- explain the model itself
-- how the model hooks into verix
-- What does it mean for our driver to be correct? I think the answer is 3 main properties
-  1. Device discovery:
-    - What: The driver finds the NIC and maps BAR0 correctly without violating any operating system requirements
-    - How: We write the model such that it throws errors in the same way as L4 describes in their documentation.
-      We then use BMC to show that for any valid system configuration the driver ends up mapping correctly
-  2. Device initialization:
-    - What: The driver should set up the NIC correctly. Correctly here means the following:
-      1. Do not set any reserved fields or invalid value ranges that potentially cause UB
-      2. Upon enabling a component we assert that the component configuration is valid and the one we expect
-    - How: We model the IO memory of the device as a state machine with 9 states according to 4.6.1
-      In each state writes to the registers concerned with the current initialization step are legal.
-      There is always a "finalization" register that enables the subcomponent. Upon writes to this finalization
-      register tow things happen:
-      1. The configuration is asserted to be valid and correct
-      2. The state is switched to the next initialization step
-      This loop continues until we eventually are done initializing
-  3. Device operation:
-    - What: Here we are mainly concerned with maintaining invariants of the RX/TX queueing structure
-      for the entire duration of the driver's runtime. Since this is forever we effectively take an
-      inductive approach here:
-      1. show that after device initialization we end up in a valid queue configuration
-      2. show that given any valid queue configuration we can do a single cycle in the processing loop that:
-        - doesn't panic
-        - processes packets correctly
-        - ends up in a valid queue configuration
-    - How: TODO: Paraphrase from implementation
-- note that it is particularly important to split stuff up, throwing the entire driver
-  into the model checker at once is not viable.
+`mix` is our main tool in verifying the above procedures. Like the driver `mix` is logically
+split into three parts as well:
+1. A model for the PCI @VBus to verify discovery.
+2. A model that covers the @MMIO based initialization.
+3. A model for the interactions that are supposed to happen while receiving and transmitting packets.
+
+All three of these models hook into verix by implementing the traits provided by `pc-hal` and then plugging
+into the APIs that are usually filled with `pc-hal-l4`.
+
+The model for the PCI @VBus is rather straight forward as, just like the L4 one, it merely simulates
+a bus with a single relevant PCI device, the Intel 82599. The Kani harness that we use to verify
+this procedure simply feeds this simulated @VBus to the discovery procedure of verix and ends asserts
+that the proper device is found.
+
+The modeling of the initialization procedure is more complicated. An uninitialized Intel 82599 in
+`mix` contains a state machine with 18 states. All of the @MMIO register writes are hooked up to
+this state machine through the `pc-hal` interfaces. As the writes occur we assert that the registers
+mentioned in the current step of the initialization get the correct values and the previous
+registers are not further modified (unless required by the procedure). After the procedure is
+done we assert that we are in the final state to verify that the device has in fact been initialized.
+
+While both of these test targets contain very linear code and the Kani harnesses don't really make
+use of symbolic variables we still run them through Kani instead of a normal mock test. This is because
+we also want the additional guarantees that Kani gives us, in particular the pointer related ones.
+
+The most complex model is the one for receiving and transmitting packets. Just like in @verix we begin
+with discussing the receive half as the transmit one works quite analogously. The properties that we aim
+to verify for the receive procedure are:
+1. If there is at least one packet present on the queue and we have memory to replace the slot we receive it
+2. If there is no packet present on the queue we don't receive anything
+3. The additional properties that Kani gives us for free, again the ones of particular interest are
+  pointer and memory related ones.
+
+=== Verifying receive
+We begin by defining what it means for a queue state to be valid and then establish
+an induction based proof to demonstrate that the queue state always remains valid. Afterwards
+we establish that the properties 1 and 2 always hold in a valid queue state.
+
+#definition("Valid receive read descriptor")[
+    We call a receive read descriptor valid iff:
+    - DD is 0
+    - The Header Buffer Address is 0
+    - The Packet Buffer Address points to valid memory for at least 1500 bytes
+]  <valid_adv_rx_read>
+
+#definition("Valid receive write back descriptor")[
+    We call a receive write back descriptor valid iff:
+    - DD is 1
+    - EOP is 1
+] <valid_adv_rx_wb>
+
+Next we split up the queue into two different sections based on RDH, RDT and `rx_index`.
+While our queue is implemented as a ring buffer we will not concern ourselves with the details
+of the ring buffer semantics in these definitions for sake of clarity. These details are however
+taken care of in the Kani implementations of these definitions.
+
+#definition("Receive read section")[
+    The receive read section of a queue $Q$ covers the interval $Q["RDH", "RDT"]$.
+]
+
+#definition("Valid receive read section")[
+    We call a receive read section valid, iff all the descriptors in its range are
+    valid receive read descriptors according to @valid_adv_rx_read.
+]
+
+#definition("Receive write back section")[
+    The receive write back section of a queue $Q$ covers the interval $Q["rx_index", "RDH")$.
+]
+
+#definition("Valid receive write back section")[
+    We call a receive write back section valid, iff all the descriptors in its range are
+    valid receive write back descriptors according to @valid_adv_rx_wb.
+]
+
+In addition to this we aim to maintain the invariant on `rx_index` that was previously mentioned in
+@verix.
+
+#definition("rx_index invariant")[
+    The `rx_index` is always $"RDT" + 1$.
+]
+
+#definition("Valid receive queue")[
+    We call a receive queue valid iff:
+    - Its receive read section is valid
+    - Its receive write back section is valid
+    - Its `rx_index` invariant is maintained
+]
+
+We now establish the theorem that we always remain in a valid receive queue state as well as the
+properties that we are actually interested in, based on this result.
+
+#theorem("The initialized receive queue state is valid")[
+    After the initialization procedure the receive queue is in a valid state.
+] <init_rx_valid>
+
+#proof[
+    This is verified by a Kani test harness.
+]
+
+#theorem("The receive queue state remains valid")[
+    Assuming that we already are in a valid queue state we always remain in a valid queue state
+    after calling the receive procedure.
+] <step_rx_valid>
+
+#proof[
+    This is verified by a Kani test harness.
+]
+
+#theorem("The driver always remains in a valid receive queue state")[
+    Assuming that we try to receive packets after initialization, the receive queue
+    always remains in a valid state.
+] <rx_valid>
+
+#proof[
+    This statement cannot directly be expressed in Kani. However it clearly follows from
+    the @init_rx_valid and @step_rx_valid as those are the base case and inductive case for an induction
+    proof on this statement.
+]
+
+#theorem("The driver receives a packet if it is present")[
+    In any receive queue state that is reachable from the initial state, assuming that:
+    - We have at least one free packet buffer 
+    - There is at least one packet on the queue (i.e. the write back section is non empty)
+    The driver receives this packet.
+]
+
+#proof[
+    This is verified by a Kani test harness which assumes that we are in a valid receive queue state.
+    This assumption is valid according to @rx_valid.
+]
+
+#theorem("The driver receives no packets if the queue is empty")[
+    In any receive queue state that is reachable from the initial state, assuming that
+    there are no packets on the queue (i.e. the write back section is empty),
+    the driver will not receive any packets.
+]
+
+#proof[
+    This is verified by a Kani test harness which assumes that we are in a valid queue state.
+    This assumption is valid according to @rx_valid.
+]
+
+=== Verifying transmit
+While the transmit procedure does introduce additional complexity through the cleanup procedure,
+verifying this procedure was not possible with Kani as we will discuss in @limitations.
+Thus we limit ourselves to specifying and verifying the correctness of the transmit procedure
+without cleanup. The proof ends up working very similarly to the receive one:
+
+#definition("Valid transmit read descriptor")[
+    We call a transmit read descriptor valid iff:
+    - all of the features in the descriptor that are unused are disabled
+    - DTYP is set to the advanced pattern
+    - RS is 1
+    - DD is 0
+    - IFCS is 1
+    - EOP is 1
+    - The PAYLEN is greater than zero
+    - The Packet Buffer Address points to valid memory for at least 1500 bytes
+]  <valid_adv_tx_read>
+
+#definition("Valid transmit write back descriptor")[
+    We call a transmit write back descriptor valid iff DD is 1.
+] <valid_adv_tx_wb>
+
+Next we split up the queue into two different sections based on TDH, TDT and `tx_index`.
+While this is very similar to the RX setup there is a slight difference.
+
+#definition("Transmit read section")[
+    The transmit read section of a queue $Q$ covers the interval $Q["TDH", "TDT")$.
+]
+
+#definition("Valid transmit read section")[
+    We call a transmit read section valid, iff all the descriptors in its range are
+    valid transmit read descriptors according to @valid_adv_tx_read.
+]
+
+#definition("Transmit write back section")[
+    The transmit write back section of a queue $Q$ covers the interval $Q["clean_index", "TDH")$.
+]
+
+#definition("Valid transmit write back section")[
+    We call a transmit write back section valid, iff all the descriptors in its range are
+    valid receive write back descriptors according to @valid_adv_tx_wb.
+]
+
+In addition to this we aim to maintain two invariants on `tx_index` and `clean_index`:
+
+#definition("tx_index invariant")[
+    The `tx_index` is always equal to TDT.
+]
+
+#definition("clean_index invariant")[
+    The `clean_index` is always after the `tx_index` and before TDH.
+]
+
+#definition("Valid transmit queue")[
+    We call a transmit queue valid iff:
+    - Its transmit read section is valid
+    - Its transmit write back section is valid
+    - Its `tx_index` invariant is maintained
+    - Its `clean_index` invariant is maintained
+]
+
+The proof that we always remain in a valid transmit queue state is exactly the same as
+@rx_valid, except that we use transmit instead of receive definitions, so we omit it here.
+
+#theorem("The driver always remains in a valid transmit queue state")[
+    Assuming that we try to transmit packets after initialization, the transmit queue
+    always remains in a valid state.
+] <tx_valid>
+
+#proof[
+    This statement is proven analogously to @rx_valid. This includes the limitation that the
+    induction itself is not verified by Kani, only the base case and the step.
+]
+
+#theorem("The driver transmits a packet if the queue is not full")[
+    In any transmit queue state that is reachable from the initial state, assuming that
+    the queue is not full (i.e. the write back section doesn't contain the entire queue),
+    the driver will transmit a packet successfully.
+]
+
+#theorem("The driver doesn't transmit packets if the queue is full")[
+    In any transmit queue state that is reachable from the initial state, assuming that
+    the queue is full (i.e. the write back section does contain the entire queue),
+    the driver will not transmit a packet.
+]
+
+#proof[
+    This is verified by a Kani test harness which assumes that we are in a valid transmit queue state.
+    This assumption is valid according to @tx_valid.
+]
+
+=== Limitations <limitations>
+
 #pagebreak()
 
 = Conclusion
