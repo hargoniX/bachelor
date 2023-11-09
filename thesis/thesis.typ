@@ -24,6 +24,8 @@
         (key: "MMIO", short: "MMIO", long: "Memory Mapped Input/Output"),
         (key: "WG", short: "WG", long: "Working Group"),
         (key: "MTU", short: "MTU", long: "Maximum Transmission Unit"),
+        (key: "OOM", short: "OOM", long: "Out Of Memory"),
+        (key: "Mpps", short: "Mpps", long: "Mega packets per second")
     ),
     supervisor_institution: "Prof. Dr. Matthias Güdemann (HM)",
     supervisor_company: "Claas Lorenz (genua GmbH)",
@@ -1155,37 +1157,142 @@ The proof that we always remain in a valid transmit queue state is exactly the s
 ]
 
 === Limitations <limitations>
+In verifying the above theorems we met two main limitations of Kani in our use case.
+The first one was that Kani was seemingly unable to translate the dropping of our packet
+data structure into the @CBMC input format. Unlike normal data structures we implemented
+a custom `Drop` functionality that returns the packet buffer back to the mini allocator
+while dropping:
+#sourcecode[```rust
+pub struct Packet<'a, E, Dma, MM>
+where
+    MM: pc_hal::traits::MappableMemory<Error = E, DmaSpace = Dma>,
+    Dma: pc_hal::traits::DmaSpace,
+{
+    addr_virt: *mut u8,
+    addr_phys: usize,
+    len: usize,
+    pool: &'a Mempool<E, Dma, MM>,
+    pool_entry: usize,
+}
+
+impl<'a, E, Dma, MM> Drop for Packet<'a, E, Dma, MM>
+where
+    MM: pc_hal::traits::MappableMemory<Error = E, DmaSpace = Dma>,
+    Dma: pc_hal::traits::DmaSpace,
+{
+    fn drop(&mut self) {
+        self.pool.free_buf(self.pool_entry);
+    }
+}
+```]
+While Kani was not inherently unable to deal with custom `Drop` implementations it was
+unable to translate `self.pool.free_buf` itself in a reasonable amount of time.
+
+This is the reason that we did not end up verifying the clean up of the transmit queue above.
+Additionally we also had to leak all of the packets in the packet receive and transmit
+lemmas to avoid the same bug. While this does open the possibility of a bug in the allocator
+we believe the main idea of our theorems, namely that we maintain a valid queue state all of the time,
+to still be valid.
+
+The second limitation is in the size of our problem. The above approach already reduces
+the verification problems to just one receive or transmit action on some queue. While
+this considerably reduces the search space we were still not able to use queues that are of
+the same size as the "real world" queues in our verification. In production our driver
+uses queues with 512 slots and batch sizes up to 64. We only managed to go up to 16 slots
+and a batch size of 1 before going out of memory in the Kani harnesses. This is a large limitation
+of the guarantees that we are able to provide with respect to the real world use case.
+That said, Kani is planning on improving its verification capabilities for large heap structures
+and will hopefully support our real world problem sizes in the future.
 
 #pagebreak()
 
 = Conclusion
 == Results
-- verification
-- performance
-  - not only mbit/s but also latency like ixy, in general structure this analysis like ixy
+Based on the git history of `mix` we estimate that the entire verification effort consumed about 120
+man hours. This excludes the porting effort of the driver onto L4 which did consume more time due to
+our inexperience with the L4 hardware framework in the beginning. As detailed in the previous chapter
+we did manage to verify the guarantees that we set out to show in the beginning, as well as the free
+guarantees that Kani provides, up to the rather small queue size of 16.
+
+In order to break this boundary we did attempt to use 4 SAT solvers for our harness:
+TODO: cite
+- Minisat
+- Cadical, the Kani default
+- Kissat
+- Glucose
+
+These experiments were run on a virtualized cloud VM with 48GB of RAM and a time limit of
+16 hours for the entire verification harness. As we can see in @satres the amount of RAM
+did end up being the limiting factor when trying to scale the queue size up:
+#figure(
+  table(
+    columns: (auto, auto, auto, auto),
+    [*Solver*], [*Queue Size*], [*Time (hh:mm:ss)*], [*RAM (GB)*],
+    [Minisat], [16], [Timeout], [-],
+    [Cadical], [16], [$5:04:39$], [46],
+    [Cadical], [32], [-], [@OOM],
+    [Kissat], [16], [$3:53:56$], [18],
+    [Kissat], [32], [-], [@OOM],
+    [Glucose], [16], [$5:42:35$], [19],
+    [Glucose], [32], [-], [@OOM],
+  ),
+  caption: [Resource Consumption of different SAT solvers],
+) <satres>
+That being said we did observe that the vast majority of memory in the large queue attempts
+were consumed by @CBMC itself, not the SAT solvers. This indicates that if either @CBMC
+itself improves or Kani ends up generating a better translation of Rust in the future,
+we might be able to run our harness on bigger queue sizes as well.
+
+In addition to this we also checked that the performance of our driver running on real world
+hardware is competitive with that reported in the ixy papers. Due to the fact that our Intel 82599
+variant only has one cable socket, as opposed to the two socket variant used with ixy, we only
+bench marked an reflecting instead of a bidirectional forwarding application. The comparison
+between our results, using a batch size of 64 packets, can be seen in @perf. While the speed of
+network cables is usually measured in GBit/s the speed of packet processing applications is
+measured in @Mpps. The theoretical maximum @Mpps on a single 10 GBit/s line with 64 byte
+packets is $14.88$ @Mpps. However ixy is able to reach higher speeds than that as it is
+forwarding between two 10 GBit/s lines, for this reason we look at the percentage of the
+maximum possible speed to draw a comparison. Note that this comparison is biased towards
+verix as ixy has additional bookkeeping to do for the bidirectional forwarding. An additional
+difference between our test setups is the CPU. While the ixy test setup ran on a
+XEON E3-1230 v2 at both 3.3 and 1.7 GHz our setup ran a Xeon D-1521 running
+at 2.4 GHz. As we can see in the data the CPU frequency causes a drastic performance gap
+between the two ixy runs. For this reason we attribute at least the majority of the remaining
+$approx 12\%$ speed to tie with ixy to CPU frequency and not to the inability of the Rust compiler
+to optimize our code.
+
+#figure(
+  table(
+    columns: (auto, auto, auto, auto, auto),
+    [*Implementation*], [*CPU Freq (GHz)*], [*Absolute (@Mpps)*], [*Max (@Mpps)*], [*Max\%*],
+    [ixy C], [3.3], [27.4], [29.76], [92.07],
+    [ixy.rs], [3.3], [27.4], [29.76], [92.07],
+    [verix], [2.4], [11.9], [14.88], [79.97],
+    [ixy C], [1.7], [17.2], [29.76], [57.80],
+    [ixy.rs], [1.7], [17.2], [29.76], [57.80],
+  ),
+  caption: [Performance of ixy vs verix at a batch size of 64]
+) <perf>
+
+We thus conclude that we have successfully ported the driver onto L4 at a, most likely,
+comparable performance and on top of that succeeded in verifying all the properties
+that we set out to at a relatively small but not irrelevant scale.
+
 == Further Work
-- turn pc-hal into something general enough to run as e.g. a Linux userspace driver
-- add a virtio backend to make it useful for other applications on L4
-  - potential for virtio verification as already partially done with kani
+Three interesting kinds of work that could be built on top of this are relatively clear to us.
+
+First off one could attempt to turn `pc-hal` into a truly generic hardware abstraction layer
+like `embedded-hal` and thus achieve portable Rust based user space drivers across multiple
+operating systems.
+
+Secondly verix does right now exist mostly in a vacuum, it is not actually useful to other
+L4 tasks that wish to interact with the network, in particular VMs. For this purpose one could
+implement and potentially verify a virtio adapter that lets verix communicate with other L4 tasks
+in order to provided (semi)-verified high performance networking.
+
+Lastly, as already mentioned above, improving the performance of Kani or @CBMC on the problem instances
+generated by our harnesses might end up enabling to properly verify the driver at its full queue size in the
+future.
 
 = Meeting Anmerkungen
-- DONE: L4 und Intel 82599 context reicht aus, nicht notwendig weiter auszuführen
 - Verweis auf meinen Code als Github statt im Anhang
-- kani:
-  - DONE: Diskussion alternativer prover
-    - DONE: kani
-    - DONE: creusot
-    - DONE: prusti
-  - kani capabilities weiter ausformulieren
-  - DONE: kapitel 4 zu "verifikation in rust" ausweiten
-- verix:
-  - was ist der Aufwand
-  - was genau hat man verifiziert
-  - wie lange braucht kani, statistiken
-  - vollständig oder nur teilweise bewiesene Funktionen?
-  - statisken ueber welche funktionen ich verifiziert habe
-  - andere solver ausprobieren:
-    - gluecose
-    - minisat
-    - kissat
-    - other kani solvers?
