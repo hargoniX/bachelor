@@ -1215,7 +1215,7 @@ we did manage to verify the guarantees that we set out to show in the beginning,
 guarantees that Kani provides, up to the rather small queue size of 16.
 
 In order to break this boundary we did attempt to use 4 SAT solvers for our harness:
-- Minisat TODO cite
+- Minisat #cite(<minisat>)
 - Cadical #cite(<cadical-kissat>), the Kani default
 - Kissat #cite(<cadical-kissat>)
 - Glucose #cite(<glucose>)
