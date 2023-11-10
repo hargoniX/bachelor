@@ -101,6 +101,7 @@
       strong(it)
     }
     show: thmrules
+    show raw: set text(font: "JuliaMono", size: 9pt)
 
     // Logo
     v(5%)

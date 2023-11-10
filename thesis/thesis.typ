@@ -1,12 +1,20 @@
 #import "template.typ": thesis, bfield, bit, bits, bytes, flagtext, theorem, definition, proof
 #import "@preview/codelst:1.0.0": sourcecode
 
+
 #show: thesis.with(
-    title: "verix: A Verified Rust ix(4) driver",
+    title: "VeRix: A Verified Rust ix(4) driver",
     name: "Henrik Böving",
     email: "henrik_boeving@genua.de",
     matriculation: "XXX",
-    abstract: lorem(70),
+    abstract: [
+      This thesis addresses the increasing importance of bug detection in computer systems, 
+      focusing specifically on bugs related to the acquisition of data from external sources. 
+      The thesis highlights a gap in the existing literature, emphasizing the lack of formally verified network drivers.
+      We propose a method using a model of the target hardware and BMC to prove correct cooperation between a NIC driver and the hardware.
+      The practical viability of the approach is demonstrated by implementing a driver for the Intel 82559ES NIC.
+      The driver is then demonstrated to cooperate correctly with a model of the target hardware using the Kani BMC.
+    ],
     paper-size: "a4",
     bibliography-file: "thesis.bib",
     glossary: (
@@ -58,9 +66,9 @@ While verifying network stacks and applications requires substantial resources d
 // Summarize why nobody else has adequately answered the research question yet.
 To our knowledge, there do not exist network drivers whose interaction with the @NIC itself has been formally verified.
 Instead, the focus is usually put on other issues that arise in driver implementation:
-- #cite(<witowski2007drivers>) and #cite(<ball2004slam>) are mostly concerned with the driver interactions with the rest of the kernel
+- @witowski2007drivers and @ball2004slam are mostly concerned with the driver interactions with the rest of the kernel
   as well as the absence of C-related issues
-- #cite(<more2021hol4drivers>) implements a verified monitor for interactions of a real driver with the @NIC instead of verifying the driver itself.
+- @more2021hol4drivers implements a verified monitor for interactions of a real driver with the @NIC instead of verifying the driver itself.
    While this means that bad interactions with the hardware can now be detected at runtime this still has to be done in a way that is
   preventing the driver from its regular operations which usually means a crash.
 
@@ -69,10 +77,10 @@ In this thesis, we show that formally verifying the interaction of a driver with
 
 // How did you go about doing the research that follows from your big idea?
 To show that the concept is viable in practice we implement a driver for the widely used Intel 82559ES @NIC.
-This is done on the L4.Fiasco #cite(<l4doc>) microkernel so misbehavior of the driver can barely affect the system as a whole in the first place.
+This is done on the L4.Fiasco @l4doc microkernel so misbehavior of the driver can barely affect the system as a whole in the first place.
 
 On top of that we are use the Rust programming language which guarantees additional safety properties out of the box.
-The driver and model themselves use a custom Rust DSL in the spirit of svd2rust to make correct peripheral access easier.
+The driver and model themselves use a custom Rust DSL in the spirit of `svd2rust` to make correct peripheral access easier.
 Finally we show, using the Kani @BMC, that the driver correctly cooperates with a model of the 82559ES, where correctly means that:
 - The driver doesn't panic
 - The driver doesn't put the model into an undefined state
@@ -102,7 +110,6 @@ a capability: threads, access to hardware, @IPC gates to other tasks etc.
 This means that the set of capabilities that we initially grant our driver completely
 determine the way it may interact with the rest of the operating system.
 == Memory
-// TODO: This is almost literally the docs
 The separation of features out of the kernel in L4.Fiasco even goes as far as
 removing memory management from the kernel. Instead a so called pager task is
 designated as the memory manager of one or multiple threads. Once one of these
@@ -151,7 +158,7 @@ due to three key factors:
 
 In this section we aim to give an overview over the important Rust features
 that we use. For a more complete overview of the Rust language
-refer to #cite(<rustbook>).
+refer to @rustbook.
 
 == Ownership
 All variables in Rust are immutable by default, hence the following program does
@@ -418,13 +425,13 @@ Value: 1
 ```
 The precise workings of the declarative macro syntax and all the kinds
 of syntax that can be matched upon are far out of scope for this work so we refer to
-#cite(<rustmacrobook>) for a more detailed introduction.
+@rustmacrobook for a more detailed introduction.
 = Formal Verification in Rust
 To our knowledge there do currently exist three actively maintained and reasonably
 popular tool for (semi)-automated verification of Rust code:
-- Kani #cite(<kani>)
-- Creusot #cite(<creusot>)
-- Prusti #cite(<prusti>)
+- Kani @kani
+- Creusot @creusot
+- Prusti @prusti
 A key feature for our verification effort is the ability to verify `unsafe` code
 reasonably easy. According to its issue tracker, Creusot is currently not capable
 of verifying `unsafe` code at all #footnote[https://github.com/xldenis/creusot/issues/36].
@@ -449,7 +456,7 @@ which made us pick it for this verification effort.
 
 Kani is implemented as a code generation backend fo the Rust compiler. However
 instead of generating executable code, it generates an intermediate representation
-of @CBMC #cite(<cbmc>). While @CBMC is originally intended for verifying C code,
+of @CBMC @cbmc. While @CBMC is originally intended for verifying C code,
 by using this trick Kani is able to make use of all the features that already
 exist in @CBMC. By default Kani checks the following properties of a given piece
 of Rust code:
@@ -634,7 +641,9 @@ discussed in @verix and @mix as they are the main investigation point of this wo
 In this chapter we lay out the rough architecture that allows us to run the driver
 both on L4 and on a model of the hardware for verification purposes. Afterwards
 we formalize the notion of what it means for our driver to be correct and lay
-out how we verified these properties using Kani.
+out how we verified these properties using Kani. The code for both the driver
+as well as the verification project can be found on Github
+#footnote[https://github.com/hargoniX/rustl4re/tree/master/src/l4/pkg/verix].
 
 == Architecture
 #figure(
@@ -656,7 +665,7 @@ but rather through an abstract interface called `pc-hal` which has two implement
 == pc-hal <pc-hal>
 The main job of `pc-hal` is to provide a trait based abstraction over the L4 hardware related
 APIs in order to allow us to plug `mix` in. The design is spirit of the
-Rust Embedded @WG's `embedded-hal` (TODO: cite). In particular we provide abstractions for:
+Rust Embedded @WG's `embedded-hal` #footnote[https://docs.rs/embedded-hal/0.2.7/embedded_hal/index.html]. In particular we provide abstractions for:
 - @DMA mappings
 - @VBus interface
 - PCI config space
@@ -690,12 +699,12 @@ and address manipulation.
 While the majority of the interfaces provided by `pc-hal` could probably be made sufficiently
 general to fit multiple platforms, they are currently very much designed with the L4 interface
 in mind. This makes the `pc-hal-l4` implementation of the traits mostly a thin wrapper around 
-the Rust L4 APIs. These APIs were initially developed in #cite(<humendal4>) and extended by
+the Rust L4 APIs. These APIs were initially developed in @humendal4 and extended by
 us in order to support more hardware related things in addition.
 
 In addition to the traits `pc-hal` also provides a few utility functions that work
 on top of them. The most notable one here is a type safe @MMIO abstraction in the spirit
-of the Rust Embedded @WG's `svd2rust` tool (TODO: cite). `svd2rust` allows Rust Embedded developers
+of the Rust Embedded @WG's `svd2rust` tool. `svd2rust` allows Rust Embedded developers
 to automatically generate type safe implements for @MMIO interfaces of ARM and RISC-V chips.
 The need for such a type safe API arose because interacting with an @MMIO interface in Rust
 directly uses direct pointer manipulation together with lots of constants and bit operations:
@@ -749,8 +758,8 @@ bar0.ctrl().modify(|_, w| w.lrst(1).rst(1));
 While this involves a closure and several function calls, all of the operations here end up
 getting inlined and optimized by the compiler. This optimization is so good, that our code
 ends up producing the same assembly code as the pointer based interface above. Describing
-how the entire `svd2rust` style API works is out of scope here but conceputally
-described at (TODO: link to docs)
+how the entire `svd2rust` style API works is out of scope here but can be found in the documentation
+linked in the footnote. #footnote[https://docs.rs/svd2rust/0.30.2/svd2rust/index.html]
 
 In addition to this, the macro also supports 64 bit based @MMIO which we use to generate
 type safe interfaces for the packet descriptors. The way this is usually done looks
@@ -773,8 +782,8 @@ to the intrinsically typed version that our macro provides.
 == verix <verix>
 As mentioned above verix is the code that actually interacts with the hardware and thus
 the code that we are actually interested in verifying. The driver itself is largely
-based on the ixy driver, originally from #cite(<emmerichixy>) and later ported to Rust in
-#cite(<ellmannixy>). The three main differences between our port and the Rust original
+based on the ixy driver, originally from @emmerichixy and later ported to Rust in
+@ellmannixy. The three main differences between our port and the Rust original
 are:
 1. the abstract interface instead of the Linux userspace APIs 
 2. a reduction of unsafe code from the driver itself, by generating the safe @MMIO APIs
@@ -799,7 +808,7 @@ An example state of an RX queue, configured with 8 slots, might thus look like t
   caption: [Example RX queue]
 ) <rx-queue-1>
 
-According to Section 7.1 of #cite(<intel:82599>) this state is to be interpret as follows:
+According to Section 7.1 of @intel:82599 this state is to be interpret as follows:
 1. The slots $1, 2, 3, 4$ (the interval $["RDH", "RDT")$) are owned by the hardware and contain so called read descriptors.
 2. The slots $5 , 6, 7, 0$ (the interval $["RDT", "RDH")$) are owned by the software and are either being currently
    processed or there is currently no packet buffer free to turn them back into read descriptors.
@@ -1215,10 +1224,10 @@ we did manage to verify the guarantees that we set out to show in the beginning,
 guarantees that Kani provides, up to the rather small queue size of 16.
 
 In order to break this boundary we did attempt to use 4 SAT solvers for our harness:
-- Minisat #cite(<minisat>)
-- Cadical #cite(<cadical-kissat>), the Kani default
-- Kissat #cite(<cadical-kissat>)
-- Glucose #cite(<glucose>)
+- Minisat @minisat
+- CaDiCal @cadical-kissat, the Kani default
+- Kissat @cadical-kissat
+- Glucose @glucose
 
 These experiments were run on a virtualized cloud VM with 48GB of RAM and a time limit of
 16 hours for the entire verification harness. As we can see in @satres the amount of RAM
@@ -1228,8 +1237,8 @@ did end up being the limiting factor when trying to scale the queue size up:
     columns: (auto, auto, auto, auto),
     [*Solver*], [*Queue Size*], [*Time (hh:mm:ss)*], [*RAM (GB)*],
     [Minisat], [16], [Timeout], [-],
-    [Cadical], [16], [$5:04:39$], [46],
-    [Cadical], [32], [-], [@OOM],
+    [CaDiCal], [16], [$5:04:39$], [46],
+    [CaDiCal], [32], [-], [@OOM],
     [Kissat], [16], [$3:53:56$], [18],
     [Kissat], [32], [-], [@OOM],
     [Glucose], [16], [$5:42:35$], [19],
@@ -1254,7 +1263,7 @@ forwarding between two 10 GBit/s lines, for this reason we look at the percentag
 maximum possible speed to draw a comparison. Note that this comparison is biased towards
 verix as ixy has additional bookkeeping to do for the bidirectional forwarding. An additional
 difference between our test setups is the CPU. While the ixy test setup ran on a
-XEON E3-1230 v2 at both 3.3 and 1.7 GHz our setup ran a Xeon D-1521 running
+Xeon E3-1230 v2 at both 3.3 and 1.7 GHz our setup ran a Xeon D-1521 running
 at 2.4 GHz. As we can see in the data the CPU frequency causes a drastic performance gap
 between the two ixy runs. For this reason we attribute at least the majority of the remaining
 $approx 12\%$ speed to tie with ixy to CPU frequency and not to the inability of the Rust compiler
@@ -1292,6 +1301,3 @@ in order to provided (semi)-verified high performance networking.
 Lastly, as already mentioned above, improving the performance of Kani or @CBMC on the problem instances
 generated by our harnesses might end up enabling to properly verify the driver at its full queue size in the
 future.
-
-= Meeting Anmerkungen
-- Verweis auf meinen Code als Github statt im Anhang
