@@ -1215,11 +1215,10 @@ we did manage to verify the guarantees that we set out to show in the beginning,
 guarantees that Kani provides, up to the rather small queue size of 16.
 
 In order to break this boundary we did attempt to use 4 SAT solvers for our harness:
-TODO: cite
-- Minisat
-- Cadical, the Kani default
-- Kissat
-- Glucose
+- Minisat TODO cite
+- Cadical #cite(<cadical-kissat>), the Kani default
+- Kissat #cite(<cadical-kissat>)
+- Glucose #cite(<glucose>)
 
 These experiments were run on a virtualized cloud VM with 48GB of RAM and a time limit of
 16 hours for the entire verification harness. As we can see in @satres the amount of RAM
