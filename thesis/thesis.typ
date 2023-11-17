@@ -8,12 +8,12 @@
     email: "henrik_boeving@genua.de",
     matriculation: "XXX",
     abstract: [
-      This thesis addresses the increasing importance of bug detection in computer systems,
+      This thesis addresses the increasing importance of software fault detection in computer systems,
       focusing specifically on bugs related to the acquisition of data from external sources.
       The thesis highlights a gap in the existing literature, emphasizing the lack of formally verified network drivers.
-      We propose a method using a model of the target hardware and BMC to prove correct cooperation between a NIC driver and the hardware.
-      The practical viability of the approach is demonstrated by implementing a driver for the Intel 82599 NIC.
-      The driver is then demonstrated to cooperate correctly with a model of the target hardware using the Kani BMC.
+      We propose a method using a model of the target hardware and @BMC to prove correct cooperation between a @NIC driver and the hardware.
+      The practical viability of the approach is demonstrated by implementing a driver for the Intel 82599 @NIC.
+      The driver is then demonstrated to cooperate correctly with a model of the target hardware using the Kani @BMC.
     ],
     paper-size: "a4",
     bibliography-file: "thesis.bib",
@@ -33,7 +33,8 @@
         (key: "WG", short: "WG", long: "Working Group"),
         (key: "MTU", short: "MTU", long: "Maximum Transmission Unit"),
         (key: "OOM", short: "OOM", long: "Out Of Memory"),
-        (key: "Mpps", short: "Mpps", long: "Mega packets per second")
+        (key: "Mpps", short: "Mpps", long: "Mega packets per second"),
+        (key: "DSL", short: "DSL", long: "Domain Specific Language"),
     ),
     supervisor_institution: "Prof. Dr. Matthias Güdemann (HM)",
     supervisor_company: "Claas Lorenz (genua GmbH)",
@@ -49,9 +50,9 @@
 // Introduction. In one sentence, what’s the topic?
 As computer systems are becoming increasingly omnipresent and complex both the negative impact of bugs as well as the likelihood of them occurring are increasing.
 Because of this, catching bugs with potentially catastrophic effects before they happen is becoming more and more important.
-These bugs usually occur in one of two fashions:
+These bugs mainly occur in one of two fashions:
 1. Processing of data, for example in algorithm or data structure implementations
-2. Acquisition of data, usually when interacting with the outside world in some way or form
+2. Acquisition of data, usually when the computer system interacts with the outside world in some way or form
 This thesis is mostly concerned with the latter kind.
 
 // State the problem you tackle
@@ -73,19 +74,21 @@ Instead, the focus is usually put on other issues that arise in driver implement
   preventing the driver from its regular operations which usually means a crash.
 
 // Explain, in one sentence, how you tackled the research question.
-In this thesis, we show that formally verifying the interaction of a driver with the @NIC is possible by implementing a model of the target hardware and using @BMC to prove that they cooperate correctly.
+In this thesis, we show that formally verifying the interaction of a driver with the @NIC is possible.
+We do this by implementing a model of the target hardware and using @BMC to prove that they cooperate correctly.
 
 // How did you go about doing the research that follows from your big idea?
 To show that the concept is viable in practice we implement a driver for the widely used Intel 82599 @NIC.
-This is done on the L4.Fiasco @l4doc microkernel so misbehavior of the driver can barely affect the system as a whole in the first place.
+This is done on the L4.Fiasco @l4doc microkernel, which provides a minimal trusted code base for our verification effort
+to build upon.
 
 On top of that, we use the Rust programming language which guarantees additional safety properties out of the box.
-The driver and model themselves use a custom Rust DSL in the spirit of `svd2rust` to make correct peripheral access easier.
+The driver and model themselves use a custom Rust @DSL, based on ideas developed by the Rust Embedded @WG, to make correct peripheral access easier.
 Finally, we show, using the Kani @BMC, that the driver correctly cooperates with a model of the 82599 where correctly means that:
-- The driver doesn't panic
-- The driver doesn't put the model into an undefined state
-- The driver receives all packets that are received by the model
-- The driver correctly instructs the model to send packets
+- The driver doesn't panic (safety)
+- The driver doesn't put the model into an undefined state (safety)
+- The driver receives all packets that are received by the model (correctness)
+- The driver correctly instructs the model to send packets (correctness)
 
 This thesis can be split roughly into three parts. First we give brief introductions to
 L4 in @l4, Rust in @rust, verification of Rust in @formal-rust, and the Intel 82599 in @intel-nic.
@@ -380,10 +383,10 @@ test them or add similarly shaped trait instances to all of them.
 This is where Rust's macro system comes into play. Unlike the substitution-based macros in C/C++,
 Rust's macro system allows users to write proper syntax tree to syntax tree transformations.
 Generally speaking, Rust supports two kinds of macros:
-1. declarative macros, they use an @EBNF inspired DSL to specify the transformation
+1. declarative macros, they use an @EBNF inspired @DSL to specify the transformation
 2. procedural macros, they use arbitrary Rust code for the transformation
 The macros used in this work are exclusively declarative ones so we only describe this approach.
-To illustrate the capabilities of declarative macros we embed a small math DSL into Rust:
+To illustrate the capabilities of declarative macros we embed a small math @DSL into Rust:
 #sourcecode[
 ```
 x = 1;
@@ -1280,7 +1283,7 @@ To break this boundary we attempted to use 4 SAT solvers for our harness:
 - Kissat @cadical-kissat
 - Glucose @glucose
 
-These experiments were run on a virtualized cloud VM with 48GB of RAM and a time limit of
+These experiments were run on a cloud VM with 48GB of RAM and a time limit of
 16 hours for the entire proof harness. As we can see in @satres the amount of RAM did end
 up being the limiting factor when trying to scale the queue size up:
 #figure(
