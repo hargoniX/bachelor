@@ -90,16 +90,20 @@ Finally, we show, using the Kani @BMC, that the driver correctly cooperates with
 - The driver receives all packets that are received by the model (correctness)
 - The driver correctly instructs the model to send packets (correctness)
 
-This thesis can be split roughly into three parts. First we give brief introductions to
-L4 in @l4, Rust in @rust, verification of Rust in @formal-rust, and the Intel 82599 in @intel-nic.
-The second piece in @verifying-verix is the actual contribution of our work, describing how we
-implemented and verified verix. At last we analyze both the performance and verification results
-that we obtained and give some ideas on further work in @conclusion.
+This thesis can be split roughly into four parts. First we give brief introductions to
+the used technologies in @background. We then demonstrate how we used these technologies to
+implement the driver and its verification harness in @implementation. Afterwards we analyze the results and
+limitations of our approach in @evaluation and finally draw our conclusions in @conclusion.
 
+= Background <background>
+In this chapter we introduce the three key technologies that were used in our verification effort.
+First we give a brief introduction to the rather uncommon ways that L4 allows us to interact with
+our target hardware from the userspace in @l4. Afterwards we explain the features of Rust
+that are important in understanding the driver implementation later on in @rust. Finally we give
+an overview of the formal verification tooling that currently exists for Rust, argue why
+we preferred Kani over the others, and demonstrate its capabilities in @formal-rust.
 
-#pagebreak()
-
-= L4.Fiasco and L4Re <l4>
+== L4.Fiasco and L4Re <l4>
 As a microkernel, L4.Fiasco offers barely any functionality on a kernel level.
 Instead, the kernel hands out hardware resources to user space tasks which
 can use them or distribute them further to other tasks. This allows us to
@@ -108,7 +112,7 @@ which reduces the attack surface drastically. The default set of user space prog
 and libraries that ships with L4.Fiasco is the L4 runtime environment or L4Re for short.
 In the following, we illustrate the three main L4Re interaction mechanisms used
 by our driver.
-== Capabilities
+
 The most basic mechanism are so-called capabilities. A capability is in a sense
 comparable to a file descriptor. It describes an object that is somewhere in the
 kernel and allows us to communicate with that object in some way. The difference to
@@ -123,7 +127,7 @@ This means that the set of capabilities that we initially grant our driver compl
 determines the way it may interact with the rest of the operating system. As a consequence,
 even if our driver ends up getting compromised despite our efforts, the effects that it
 can have on the system as a whole are limited
-== Memory
+
 The separation of features out of the kernel in L4.Fiasco even goes as far as
 removing memory management from the kernel. Instead, a so-called pager task is
 designated as the memory manager of one or multiple threads. Once one of these
@@ -147,22 +151,24 @@ For this reason, a modern CPU usually ships a special @MMU that manages @DMA bas
 This means that by modeling the hardware as a special kind of task with memory mappings that
 are managed by the @IOMMU we can allow our user space tasks to safely manage their @DMA mappings themselves.
 
-== The Io server
-The Io server is a task that owns all resources related to hardware that are not needed
-by the kernel itself. This includes the PCI(e) bus, interrupts, IO memory, and more.
-Thus to access hardware a task needs to have an @IPC capability to talk with
-the Io server. Instead of allowing processes with such a capability to obtain arbitrary
-hardware resources each client is granted a limited view of the hardware in the form
-of a so-called @VBus.
 #figure(
   image("figures/io-overview.svg", width: 80%),
   caption: [Io architecture],
 ) <l4io>
+
+The only missing piece now is where a program can obtain the necessary capabilities
+and memory mappings to communicate with the hardware, this is done through the IO server.
+The IO server is a task that owns all resources related to hardware that are not needed
+by the kernel itself. This includes the PCI(e) bus, interrupts, IO memory, and more.
+Thus to access hardware a task needs to have an @IPC capability to talk with
+the IO server. Instead of allowing processes with such a capability to obtain arbitrary
+hardware resources each client is granted a limited view of the hardware in the form
+of a so-called @VBus.
 As we can see in @l4io this allows us to limit the hardware that a task can see to the
 bare minimum required for operation, again following the minimal privilege principle
 from the capability system.
 
-= Rust <rust>
+== Rust <rust>
 We chose to use the Rust programming language for the entire implementation
 due to three key factors:
 1. It is memory-safe by default while at the same time being competitive with
@@ -174,7 +180,6 @@ due to three key factors:
 In this section we aim to give an overview of the important Rust features
 that we use. For a more complete overview of the Rust language we refer to @rustbook.
 
-== Ownership
 All variables in Rust are immutable by default, hence the following program does
 not compile:
 #sourcecode[```rust
@@ -290,7 +295,6 @@ impl Drop for File {
 }
 ```]
 
-== Traits
 Traits in Rust fulfill a similar purpose to interfaces in languages like Java.
 However, they are strongly inspired by type classes from languages like Haskell
 and thus provide a few extra features on top of the classical interface concept.
@@ -375,7 +379,6 @@ allow Rust to start instance search without being known from type inference.
 Whether to use generic or associated types thus comes down to a usability
 (through type inference) vs flexibility (through additional permitted instances) trade-off.
 
-== Macros
 While the recursive chaining of trait instances already allows a great deal of
 compile-time code generation there are many situations where traits are not sufficient.
 A common case is to automatically generate the same code for a list of identifiers to e.g.
@@ -441,16 +444,16 @@ The precise workings of the declarative macro syntax and all the kinds
 of syntax that can be matched on are far out of the scope of this work so we refer to
 @rustmacrobook for a more detailed introduction.
 
-= Formal Verification in Rust <formal-rust>
+== Formal Verification in Rust <formal-rust>
 To our knowledge there do currently exist three actively maintained and reasonably
-popular tool for (semi)-automated verification of Rust code:
+popular tools for (semi)-automated verification of Rust code:
 - Kani @kani
 - Creusot @creusot
 - Prusti @prusti
-A key feature of our verification effort is the ability to verify `unsafe` code
+An important requirement of our verification effort is the ability to verify `unsafe` code
 reasonably easily. According to its issue tracker, Creusot is currently not capable
 of verifying `unsafe` code at all #footnote[https://github.com/xldenis/creusot/issues/36].
-This already rules it out completely for us. With Prusti the tool is not incapable
+This already rules it out completely for us. Prusti is not incapable
 of processing `unsafe` code but its automation capabilities are very limited.
 For example, the following example cannot be verified by Prusti automatically:
 #sourcecode[```rust
@@ -593,28 +596,40 @@ fn check_interaction() {
     interaction();
 }
 ```]
-= Intel 82599 <intel-nic>
+
+
+= Implementation <implementation>
+Now that we have an overview over our target platform, language, and verification methodology,
+we can take a look at the actual implementation of the verified driver. This is split into
+four parts. We begin by explaining how a driver has to interact with the Intel 82599 in @intel-nic.
+Following this we explain the driver itself in @verifying-verix, in particular we:
+1. Introduce a framework for writing drivers, such that they can be used both
+   for verification with Kani and in the real world, in @pc-hal.
+2. Explain precisely how our driver interacts with the Intel 82599 in @verix.
+3. Provide proofs for the safety and correctness properties from the introduction in @mix.
+
+== Intel 82599 <intel-nic>
 The communication with the Intel 82599 network card happens in roughly three phases:
 1. PCI device discovery and setup
 2. Configuration of the actual device
 3. Sending and receiving packets
 In the following chapter, we aim to give an overview of these three sections with
 a particular focus on the third one as this is our main verification concern.
-== PCI setup
+
 A normal driver would initially have to look for the device on its own. However, as we are
-on L4, the Io server instead searches for these devices and presents them
+on L4, the IO server instead searches for these devices and presents them
 to us through a @VBus. Once we have obtained this device handle we can start
 talking to it through the PCI config space.
 
 This config space is in essence a memory-like structure that we can read from and write to using
-@IPC calls to the Io server. The beginning (and relevant to us part) of this structure
+@IPC calls to the IO server. The beginning (and relevant to us part) of this structure
 can be seen in @pcicfg. The fields that are of most interest to our driver are
 the 6 @BAR ones, they contain addresses of memory regions that are shared between
 our CPU and the device which we can use for @MMIO based configuration.
 
 The datasheet
 of the device @intel:82599 tells us that the relevant @BAR for configuring the device
-is the first one. Thus the first thing the driver has to do is ask the Io server
+is the first one. Thus the first thing the driver has to do is ask the IO server
 to map the memory that @BAR 0 points to into our address space so we can actually
 begin device initialization.
 
@@ -634,7 +649,6 @@ begin device initialization.
   caption: [Beginning of the PCI config space]
 ) <pcicfg>
 
-== Device Configuration <devicecfg>
 After this mapping is done the driver has to follow the initialization procedure
 described in section 4.6.3 of @intel:82599. Almost all of this configuration can
 be done exclusively through the @MMIO based interface that was established previously.
@@ -652,19 +666,12 @@ After this setup is done the actual communication with the network can begin.
 The details of this queue-based communication as well as its verification are
 discussed in @verix and @mix as they are the main investigation point of this work.
 
-= Verifying the driver <verifying-verix>
-In this chapter, we lay out the rough architecture that allows us to run the driver
-both on L4 and on a model of the hardware for verification purposes. Afterwards,
-we formalize the notion of what it means for our driver to be correct and lay
-out how we verified these properties using Kani. The code for both the driver
-as well as the verification project can be found on Github
-#footnote[https://github.com/hargoniX/rustl4re/tree/master/src/l4/pkg/verix].
-
-== Architecture
+== The driver <verifying-verix>
 #figure(
   image("figures/drawio/verix-arch.drawio.pdf.svg", width: 80%),
   caption: [Architecture]
 ) <arch>
+In this chapter, we explain how we developed and verified the driver itself.
 The rough architecture for the project is laid out in @arch. The end product is
 an application called `verix-fwd` which mirrors received packets back to the sender.
 `verix-fwd` is mainly powered by `verix-lib` which is the actual driver and the subject
@@ -677,7 +684,11 @@ but rather through an abstract interface called `pc-hal` which has two implement
     abstract interface. When plugged into `verix-lib` instead of `pc-hal-l4` we can use Kani
     to verify properties about the interaction of the driver with the modeled @NIC.
     It is discussed in @mix.
-== pc-hal <pc-hal>
+
+The code for both the driver as well as the verification project can be found on Github
+#footnote[https://github.com/hargoniX/rustl4re/tree/master/src/l4/pkg/verix].
+
+=== pc-hal <pc-hal>
 The main job of `pc-hal` is to provide a trait-based abstraction over the L4 hardware related
 APIs in order to allow us to plug `mix` in. The design is in spirit of the
 Rust Embedded @WG's `embedded-hal` #footnote[https://docs.rs/embedded-hal/0.2.7/embedded_hal/index.html]. In particular, we provide abstractions for:
@@ -807,7 +818,7 @@ mm2types! {
 desc.pkt_addr().write(|w| w.pkt_addr(device_addr));
 ```]
 
-== verix <verix>
+=== verix <verix>
 As mentioned above verix is the code that interacts with the hardware and thus
 the code that we are interested in verifying. The driver itself is largely
 based on the ixy driver, originally published in @emmerichixy and later ported to Rust in
@@ -822,8 +833,7 @@ Since the initial device setup is very linear, we won't go into the details of h
 The packet receive and transmit procedures on the other hand are more involved.
 We begin by explaining the receive procedure as it is slightly simpler than the transmit one.
 
-=== Receiving packets
-As mentioned in @devicecfg packet receiving is done through a @DMA mapped queue.
+As mentioned in @intel-nic packet receiving is done through a @DMA mapped queue.
 This queue is implemented as a ring buffer in memory. The state of this queue is
 determined by 4 @MMIO mapped registers:
 1. RDBAL and RDBAH, they contain the low and high half of the base address
@@ -905,7 +915,6 @@ These two assumptions allow for the receive operation for one packet to be imple
 On top of this the driver implements a batching mechanism that repeats the procedure up to a certain batch size in
 order to increase performance.
 
-=== Transmitting packets
 The structure of the TX queue is the same as the RX one, except that the registers are called TDBAL, TDBAH, TDLEN, TDH, and TDT.
 However, the structure of the descriptors themselves is drastically different. The read ones contain a large
 amount of meta information this time as can be seen in @adv_tx_read, the relevant pieces for our basic configuration
@@ -962,7 +971,7 @@ The procedure for transmitting a packet is unsurprisingly also very similar to t
 Just like the receive procedure the transmit one also implements a batching procedure on top of this by repeating steps
 2-4 up to a certain batch size.
 
-== mix <mix>
+=== mix <mix>
 `mix` is our main tool in verifying the above procedures. Like the driver `mix` is logically
 split into three parts:
 1. A model for the PCI @VBus to verify discovery.
@@ -996,7 +1005,6 @@ to verify for the receive procedure are:
 3. The additional properties that Kani gives us for free, again the ones of particular interest are
   pointer and memory-related ones.
 
-=== Verifying receive
 We begin by defining what it means for a queue state to be valid and then establish
 an induction-based proof to demonstrate that the queue state always remains valid. Afterwards,
 we establish that properties 1 and 2 always hold in a valid queue state, making them hold in general.
@@ -1105,11 +1113,10 @@ properties that we are interested in, based on this result.
     This assumption is valid according to @rx_valid.
 ]
 
-=== Verifying transmit
 While the transmit procedure does introduce additional complexity through the cleanup procedure,
-verifying this procedure was not possible with Kani as we will discuss in @limitations.
+verifying this procedure was not possible with Kani as we will discuss in @evaluation.
 Thus we limit ourselves to specifying and verifying the correctness of the transmit procedure
-without cleanup, stubbing it to a noop in our Kani proof harnesses. 
+without cleanup, stubbing it to a noop in our Kani proof harnesses.
 The proof ends up working very similarly to the receive one:
 
 #definition("Valid transmit read descriptor")[
@@ -1222,8 +1229,19 @@ for @rx_valid, except that we use transmit instead of receive definitions:
 This concludes the verification of all theorems that we set out to verify about the interaction of
 verix with `mix`.
 
-=== Limitations <limitations>
-In verifying the above theorems we met two main limitations of Kani in our use case.
+= Evaluation <evaluation>
+In this chapter we evaluate the success of our implementation. We first investigate how well
+we were able to meet our verification goals in @eval-veri, in particular focusing on the limitations
+we met along the way. In order to demonstrate that our approach is viable for real-world drivers
+we also perform a basic performance evaluation, comparing our performance to the one of ixy in @perf.
+
+== Verification <eval-veri>
+Based on the git history of `mix` we estimate that the entire verification effort consumed about 150
+man-hours. This excludes the porting effort of the driver onto L4 which did consume more time due to
+our inexperience with the L4 hardware framework in the beginning.
+
+While we were able perform a lot of our proofs with Kani, we met two limitations of Kani while doing so.
+
 The first one was that Kani was seemingly unable to translate the dropping of our packet
 data structure into the @CBMC input format. Unlike normal data structures, we implemented
 a custom `Drop` functionality that returns the packet buffer to the @DMA allocator
@@ -1255,29 +1273,18 @@ While Kani was not inherently unable to deal with custom `Drop` implementations 
 while attempting to translate `self.pool.free_buf`. This is also the reason that we did not
 end up verifying the clean-up of the transmit queue above. Additionally, we also had to leak
 all of the packets in the packet receive and transmit lemmas to avoid the same bug. While this
-does open the possibility of a bug in the allocator we believe the main idea of our theorems,
-namely that we maintain a valid queue state all of the time, to still be valid.
+does open the possibility of a bug in the @DMA allocator the main idea of our proofs,
+namely that we maintain a valid queue state all of the time, remain valid.
 
-The second limitation is the size of our problem. The above approach already reduces
+The second limitation was the size of our problem. The above approach reduces
 the verification problems to just one receive or transmit action on an arbitrary valid queue. While
-this considerably reduces the search space we were still not able to use queues that are of
-the same size as the "real-world" queues in our verification. In production, our driver
-uses queues with 512 slots and batch sizes up to 64. We only managed to go up to 16 slots
-and a batch size of 1 before going out of memory in the Kani harnesses. This is a large limitation
-of the guarantees that we can provide for the real-world use case. We discuss how we attempted to
-deal with these limitations in @conclusion.
+this allows us to argue about the entire state space despite only using @BMC, we were still not able to use queues that are of
+the same size as the real-world queues in our verification. In production, our driver
+uses queues with 512 slots and batch sizes up to 64. In the Kani harnesses we only managed to go up to 16 slots
+and a batch size of 1 before going @OOM. This is a major limitation
+of the guarantees that we can provide for the real-world use case.
 
-#pagebreak()
-
-= Conclusion <conclusion>
-== Results
-Based on the git history of `mix` we estimate that the entire verification effort consumed about 150
-man-hours. This excludes the porting effort of the driver onto L4 which did consume more time due to
-our inexperience with the L4 hardware framework in the beginning. As detailed in the previous chapter
-we did manage to verify the guarantees that we set out to show in the beginning, as well as the free
-guarantees that Kani provides, up to the rather small queue size of 16.
-
-To break this boundary we attempted to use 4 SAT solvers for our harness:
+To break this boundary we attempted to use a portfolio SAT solvers for our harnesses:
 - Minisat @minisat
 - CaDiCal @cadical-kissat, the Kani default
 - Kissat @cadical-kissat
@@ -1307,11 +1314,12 @@ were consumed by @CBMC itself, not the SAT solvers. This indicates that if:
 - we figure out a better way to express our proof with future Kani features
 we might be able to run our harness on bigger queue sizes as well.
 
+== Performance <perf>
 In addition to this, we also checked that the performance of our driver running on real-world
 hardware is competitive with that reported in the ixy papers. Because our Intel 82599
 variant only has one cable socket, as opposed to the two socket variant used with ixy, we only
 benchmarked a reflecting instead of a bidirectional forwarding application. The comparison
-between our results, using a batch size of 64 packets, can be seen in @perf. While the speed of
+between our results, using a batch size of 64 packets, can be seen in @perf-packets. While the speed of
 network cables is usually measured in GBit/s the speed of packet processing applications is
 measured in @Mpps. The theoretical maximum @Mpps on a single 10 GBit/s line with 64-byte
 packets is $14.88$ @Mpps. However, ixy can reach higher speeds than that as it is
@@ -1336,11 +1344,16 @@ to optimize our code.
     [ixy.rs], [1.7], [17.2], [29.76], [57.80],
   ),
   caption: [Performance of ixy vs verix at a batch size of 64]
-) <perf>
+) <perf-packets>
+
+= Conclusion <conclusion>
+TODO: Write a proper Conclusion
 
 We thus conclude that we have successfully ported the driver onto L4 at a, most likely,
 comparable performance and on top of that succeeded in verifying all the properties
 that we set out to at a relatively small but not irrelevant scale.
+
+
 
 == Further Work
 Three interesting kinds of work that could be built on top of this are relatively clear to us.
