@@ -1,4 +1,4 @@
-#import "@preview/glossarium:0.1.0": make-glossary, print-glossary, gls, glspl
+#import "@preview/glossarium:0.2.4": make-glossary, print-glossary, gls, glspl
 #import "@preview/bytefield:0.0.2": bytefield, bit, bits, bytes, flagtext
 #import "@preview/ctheorems:1.0.0": *
 
