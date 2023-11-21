@@ -1347,25 +1347,20 @@ to optimize our code.
 ) <perf-packets>
 
 = Conclusion <conclusion>
-TODO: Write a proper Conclusion
-
 We thus conclude that we have successfully ported the driver onto L4 at a, most likely,
-comparable performance and on top of that succeeded in verifying all the properties
+comparable performance to ixy. On top of that we succeeded in verifying all the properties
 that we set out to at a relatively small but not irrelevant scale.
 
-
-
-== Further Work
-Three interesting kinds of work that could be built on top of this are relatively clear to us.
+Our work might be extended in roughly three directions that we briefly lay out below.
 
 First off one could attempt to turn `pc-hal` into a truly generic hardware abstraction layer
 like `embedded-hal` and thus achieve portable Rust-based user space drivers across multiple
 operating systems.
 
-Secondly, verix does right now exist mostly in a vacuum, it is not useful to other
+Secondly, verix does mostly in a vacuum right now, it is not useful to other
 L4 tasks that wish to interact with the network, in particular VMs. For this purpose, one could
 implement and potentially verify a virtio adapter that lets verix communicate with other L4 tasks
 to provide (semi)-verified high-performance networking.
 
 Lastly, as already mentioned above, improving the queue size for which our proof can be conducted
-by improving @CBMC, Kani or our harnesses.
+by improving @CBMC, Kani or our harnesses and thus enabling full verification of the real world application.
