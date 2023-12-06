@@ -90,16 +90,16 @@ Finally, we show, using the Kani @BMC, that the driver correctly cooperates with
 - The driver receives all packets that are received by the model (correctness)
 - The driver correctly instructs the model to send packets (correctness)
 
-This thesis can be split roughly into four parts. First we give brief introductions to
+This thesis can be split roughly into four parts. First, we give brief introductions to
 the used technologies in @background. We then demonstrate how we used these technologies to
-implement the driver and its verification harness in @implementation. Afterwards we analyze the results and
+implement the driver and its verification harness in @implementation. Afterwards, we analyze the results and
 limitations of our approach in @evaluation and finally draw our conclusions in @conclusion.
 
 = Background <background>
-In this chapter we introduce the three key technologies that were used in our verification effort.
-First we give a brief introduction to the rather uncommon ways that L4 allows us to interact with
-our target hardware from the userspace in @l4. Afterwards we explain the features of Rust
-that are important in understanding the driver implementation later on in @rust. Finally we give
+In this chapter, we introduce the three key technologies that were used in our verification effort.
+First, we give a brief introduction to the rather uncommon ways that L4 allows us to interact with
+our target hardware from the userspace in @l4. Afterwards, we explain the features of Rust
+that are important in understanding the driver implementation later on in @rust. Finally, we give
 an overview of the formal verification tooling that currently exists for Rust, argue why
 we preferred Kani over the others, and demonstrate its capabilities in @formal-rust.
 
@@ -178,7 +178,7 @@ due to three key factors:
 3. It already has partial support on our target platform, L4.Fiasco.
 
 In this section we aim to give an overview of the important Rust features
-that we use. For a more complete overview of the Rust language we refer to @rustbook.
+that we use. For a more complete overview of the Rust language, we refer to @rustbook.
 
 All variables in Rust are immutable by default, hence the following program does
 not compile:
@@ -191,8 +191,8 @@ fn main() {
 }
 ```]
 But mutability can be opted in to by using `let mut`. The idea behind immutable by
-default is to limit the amount of moving pieces in a software to a minimum. This
-allows programmers to argue easier about their code as there are less moving pieces.
+default is to limit the number of moving pieces in a program to a minimum. This
+allows programmers to argue more easily about their code as there are fewer moving pieces.
 On top of that, it plays an important role in Rust's approach to memory safety.
 
 The most notable feature of Rust that distinguishes it from other widely used
@@ -450,9 +450,9 @@ popular tools for (semi)-automated verification of Rust code:
 - Kani @kani
 - Creusot @creusot
 - Prusti @prusti
-Based on the Rust features used in our code under verification we compiled a list of feature requirements for the tool
-for this job:
-- Core languages features: like control flow, borrowing, structs, and arrays
+Based on the Rust features used in our drier code we compiled a list of feature requirements for a tool
+that we could use to verify the driver:
+- Core language features:
   - (mutable) variables
   - control flow
   - loops
@@ -480,7 +480,7 @@ for this job:
 As we can see in @requirements the only feature that both Creusot and Prusti are missing
 is the capability to deal with `unsafe` code. Since our program is a driver, a certain degree
 of direct hardware interaction through pointers (or interfaces that abstract pointers) is impossible
-to avoid. For Creusot the lack of `unsafe` support is evident from its issue tracker
+to avoid. For Creusot, the lack of `unsafe` support is evident from its issue tracker
 where this is still an open feature request #footnote[https://github.com/xldenis/creusot/issues/36].
 Prusti is not entirely incapable of processing `unsafe` code but its automation capabilities are very limited.
 For example, the following example cannot be verified by Prusti automatically:
@@ -502,7 +502,7 @@ which made us pick it for this verification effort.
 
 Kani is implemented as a code generation backend for the Rust compiler. However
 instead of generating executable code, it generates an intermediate representation
-of @CBMC @cbmc. While @CBMC is originally intended for verifying C code,
+of @CBMC @cbmc. While @CBMC was originally intended for verifying C code,
 by using this trick Kani can make use of all the features that already
 exist in @CBMC. By default, Kani checks the following properties of a given piece
 of Rust code:
@@ -514,11 +514,10 @@ of Rust code:
 - the absence of runtime panics
 - the absence of violations of user-added assertions
 
-For example, the following Rust code would crash if `a` has length $0$ or if `i`
-is sufficiently large:
+For example, the following Rust code would crash if `a` has length $0$:
 #sourcecode[```rust
 fn get_wrapped(a: &[u32], i: usize) -> u32 {
-    return a[i % a.len() + 1];
+    return a[i % a.len()];
 }
 ```]
 We can check this using Kani as follows:
@@ -532,20 +531,21 @@ fn check_get_wrapped() {
     get_wrapped(&array, index);
 }
 ```]
-Kani ends up spotting both failures and an additional one:
+Kani ends up spotting the failure and an additional one:
 ```
 SUMMARY:
-Failed Checks: This is a placeholder message; Kani doesn't support message formatted at runtime
- File: ".../alloc/src/raw_vec.rs", line 534, in alloc::raw_vec::capacity_overflow
+ ** 2 of 376 failed (8 unreachable)
 Failed Checks: attempt to calculate the remainder with a divisor of zero
-Failed Checks: index out of bounds: the length is less than or equal to the given index
+ File: ".../lib.rs", line 2, in get_wrapped
+Failed Checks: This is a placeholder message; Kani doesn't support message formatted at runtime
+ File: ".../raw_vec.rs", line 545, in alloc::raw_vec::capacity_overflow
 ```
 As we just saw we can use the `kani::any()` function to generate arbitrary symbolic
 values of basic types like integers. These basic values can then be used to build
 up more complex symbolic values like the `Vec<u32>` from above. However, there is
 one more issue than expected with the proof, the harness caused an error
 in the allocator for `Vec` because it is possible to request too much memory. Since the error is
-introduced by the proof code itself, instead of the code under test, we probably
+introduced by the proof code itself, instead of the code we wish to verify, we probably
 want to get rid of it. This can be achieved by putting a constraint on `size`
 using the `kani::assume()` function:
 #sourcecode[```rust
@@ -559,11 +559,75 @@ fn check_get_wrapped() {
     get_wrapped(&array, index);
 }
 ```]
+While this proof harness ends up only finding the failure we expect, it is very much possible
+that there are additional failures that are not discovered at this array size. As we will see
+later on, there is usually a trade-off between the amount of state we explore (i.e. how sure we
+are that the verified properties generally hold) and the amount of resources (both time and RAM) required
+to complete the verification.
 
-In the two harnesses above there is no iteration, this makes it easy for Kani to
-explore the entire state space. Once we introduce loops Kani unfolds them
-to explore the state space. In many situations we need to limit this
-unfolding to hold it back from exploring a large or potentially infinite state space:
+Additionally, we can tell Kani to generate counterexamples based on the failures that it found.
+This is done by adding the flag `--concrete-playback=print` to the `cargo kani` invocation.
+The counterexamples are then directly printed as unit tests that can be run using standard Rust tooling:
+#sourcecode[```rust
+#[test]
+fn kani_concrete_playback_check_get_wrapped_10606138830414890630() {
+    let concrete_vals: Vec<Vec<u8>> = vec![
+        // 0ul
+        vec![0, 0, 0, 0, 0, 0, 0, 0],
+        // 18446744073709551615ul
+        vec![255, 255, 255, 255, 255, 255, 255, 255],
+    ];
+    kani::concrete_playback_run(concrete_vals, check_get_wrapped);
+}
+```]
+The counterexample gets encoded as a series of byte vectors, one for each invocation of `kani::any`.
+In this scenario the first variable (`size`) gets fixed to $0$ and the second one (`index`) to some large
+integer. This counterexample describes precisely the scenario that we expected to fail: Wrapped indexing
+into an empty array.
+
+We now consider the scenario where the `index` variable is not directly generated from `kani::any`
+but additionally preprocessed by some function. In this scenario, we might want to make sure
+that our harness also checks the case where we go above the bounds of the loop. After all,
+this is the precise situation that `get_wrapped` is supposed to guard against.
+Such statements can be asserted using the `kani::cover` function:
+#sourcecode[```rust
+#[cfg(kani)]
+fn complicated() -> usize {
+    let mut index: usize = kani::any();
+    // additional logic
+    index
+}
+
+#[cfg(kani)]
+#[kani::proof]
+fn check_get_wrapped() {
+    let size: usize = kani::any();
+    kani::assume(size < 128);
+    let array: Vec<u32> = vec![0; size];
+    let index = complicated();
+    kani::cover(index >= array.len(), "The index can go out bounds");
+    get_wrapped(&array, index);
+}
+```]
+This changes nothing about the failures that we end up finding but an additional remark
+about the satisfied cover properties gets added to the output:
+```
+SUMMARY:
+ ** 1 of 376 failed (8 unreachable)
+
+ ** 1 of 1 cover properties satisfied
+```
+
+In the harnesses above there is no iteration, this makes it easy for Kani to
+explore the entire state space. Once we introduce loops Kani has two strategies
+to explore the state space.
+
+The first approach is to unwind the loops a limited amount of times, just enough to explore
+the entire state space. In many situations, we need to limit the state space that we wish to
+consider in the first place as unwinding too much ends up generating too large problem instances
+to compute with reasonable resources. In the following, we will consider a new function, `zeroize`
+which clears an array of bytes to all $0$. We wish to verify that the function does this for every
+slot of the array:
 #sourcecode[```rust
 fn zeroize(buffer: &mut [u8]) {
     for i in 0..buffer.len() {
@@ -573,14 +637,35 @@ fn zeroize(buffer: &mut [u8]) {
 
 #[cfg(kani)]
 #[kani::proof]
-#[kani::unwind(1)] // deliberately too low
 fn check_zeroize() {
     let size: usize = kani::any();
-    kani::assume(size < 128);
     kani::assume(size > 0);
+    kani::assume(size < 32);
     let mut buffer: Vec<u8> = vec![10; size];
 
     zeroize(&mut buffer);
+    let index: usize = kani::any();
+    kani::assume(index < buffer.len());
+    assert!(buffer[index] == 0);
+}
+```]
+When we run Kani on this we end up unwinding the loop in `zeroize` indefinitely.
+To limit loop unwinding we have to tell the harness about a limit explicitly.
+If this limit is too low to explore the given state space Kani complains:
+#sourcecode[```rust
+#[cfg(kani)]
+#[kani::unwind(1)]
+#[kani::proof]
+fn check_zeroize() {
+    let size: usize = kani::any();
+    kani::assume(size > 0);
+    kani::assume(size < 32);
+    let mut buffer: Vec<u8> = vec![10; size];
+
+    zeroize(&mut buffer);
+    let index: usize = kani::any();
+    kani::assume(index < buffer.len());
+    assert!(buffer[index] == 0);
 }
 ```]
 Instead of simply verifying only one loop iteration Kani tells us that this
@@ -588,11 +673,25 @@ bound is too low:
 ```
 Failed Checks: unwinding assertion loop 0
 ```
-Once we increase it to $128$ all checks pass.
+Once we increase it to $32$ all checks pass. However, there exists a scalability issue
+here. Once we ramp the size up to $64$ or larger @CBMC ends up consuming several GB of
+RAM to solve the same underlying problem as before.
 
-The last feature that is of interest for this work are stubs. They allow us to
-replace functions in the code under verification with mocks. This is useful
-for verifying functions that are out of reach for Kani, for example interactions
+For situations like this Kani provides an experimental alternative called Loop-contract synthesis.
+This uses an approach described in @invariants to synthesize invariants that describe
+the behavior of loops. The biggest limitation of the current implementation is that it is currently
+not compatible with loop unwinding. This means that we cannot use Loop-contract synthesis for a few
+hard loops that we don't wish to unwind but the rest of the program is too hard to synthesize contracts
+for we cannot use the synthesis selectively. That said this issue is not an inherent limitation
+of the approach and there do exist ideas on how to change this in the feature proposal
+#footnote[https://github.com/model-checking/kani/blob/6d628bf0b399b8c50ddea9f011321463e4c00e4c/rfc/src/rfcs/0004-loop-contract-synthesis.md].
+The experimental state of the feature also shows when attempting to use it on slightly non-trivial
+examples like the above, when attempting to use it through the
+`--synthesize-loop-contracts` flag  a subcomponent of @CBMC ends up crashing.
+
+The last feature that is of interest for this work is stubbing. It allows us to
+replace functions in the code under verification with different functions. This is useful
+for verifying functions that are out of reach for Kani, for example, interactions
 with the operating system:
 #sourcecode[```rust
 use std::{thread, time::Duration};
@@ -625,12 +724,59 @@ fn check_interaction() {
 }
 ```]
 
+On top of stubs, Kani provides another experimental feature called function contracts.
+The idea here is to describe the pre- and postconditions of a function and then replace
+all calls to this function with a stub that asserts the preconditions and assumes the postconditions.
+This allows us to verify functions in a modular fashion and thus enables us to verify much larger
+bodies of code piece by piece instead of translating everything at once into a @CBMC problem.
+For example, we can provide a contract for a division function:
+#sourcecode[```rust
+fn get(a: &[u32], i: usize) -> u32 {
+    return a[i];
+}
+
+#[cfg(kani)]
+mod kani {
+    use crate::get;
+
+    #[kani::requires(divisor != 0)]
+    #[kani::ensures(result <= dividend)]
+    fn my_div(dividend: usize, divisor: usize) -> usize {
+        dividend / divisor
+    }
+
+    #[kani::proof_for_contract(my_div)]
+    fn my_div_harness_proof() {
+        my_div(kani::any(), kani::any());
+    }
+
+    #[kani::proof]
+    fn check_get() {
+        let size: usize = kani::any();
+        kani::assume(size < 128);
+        kani::assume(size > 0);
+        let array: Vec<u32> = vec![0; size];
+        let index = my_div(array.len() - 1, 2);
+        get(&array, index);
+    }
+}
+```]
+While this particular harness ends up succeeding there are many scenarios that this
+overapproximation of `my_div`'s behavior leaves out. For example using `2 * (array.len() - 1) / 2`
+as `index` ends up failing because the contract only claims that the result will be less than
+or equal to `2 * array.len() - 2` which is not sufficient to establish that we are in bounds.
+Thus when doing verification with contracts we need to design them in a way to fit the consumer
+of the contract in other proofs, instead of the usual blind approach that we can take without
+contracts. Unfortunately, side effects on memory or quantifier logic in the pre and postconditions
+are currently only addressed in the contract proposal #footnote[https://github.com/model-checking/kani/blob/6d628bf0b399b8c50ddea9f011321463e4c00e4c/rfc/src/rfcs/0009-function-contracts.md]
+and not yet implemented. Since the majority of behavior in a driver are memory
+effects we cannot use this feature for our verification purposes.
 
 = Implementation <implementation>
-Now that we have an overview over our target platform, language, and verification methodology,
+Now that we have an overview of our target platform, language, and verification methodology,
 we can take a look at the actual implementation of the verified driver. This is split into
 four parts. We begin by explaining how a driver has to interact with the Intel 82599 in @intel-nic.
-Following this we explain the driver itself in @verifying-verix, in particular we:
+Following this we explain the driver itself in @verifying-verix, in particular, we:
 1. Introduce a framework for writing drivers, such that they can be used both
    for verification with Kani and in the real world, in @pc-hal.
 2. Explain precisely how our driver interacts with the Intel 82599 in @verix.
@@ -692,7 +838,7 @@ mapped buffers in total:
 - one as a memory pool for packet buffers
 After this setup is done the actual communication with the network can begin.
 The details of this queue-based communication as well as its verification are
-discussed in @verix and @mix as they are the main investigation point of this work.
+discussed in @verix and @mix as they are the main investigation points of this work.
 
 == The driver <verifying-verix>
 #figure(
@@ -783,7 +929,7 @@ self.set_reg32(IXGBE_CTRL, IXGBE_CTRL_RST_MASK);
 
 `svd2rust` provides this API by automatically generating code from an XML-based interface description,
 the SVD files. While such files are not available for the Intel 82599 we end up generating an
-API that works very similarly to the `svd2rust` ones. However, our implementation is not file to file converter
+API that works very similarly to the `svd2rust` ones. However, our implementation is not file-to-file converter
 but instead implemented as a declarative Rust macro. The user interface of our macro looks as follows:
 
 #sourcecode[```rust
@@ -1336,9 +1482,9 @@ up being the limiting factor when trying to scale the queue size up:
   caption: [Resource Consumption of different SAT solvers],
 ) <satres>
 That being said we did observe that the vast majority of memory in the large queue attempts
-were consumed by @CBMC itself, not the SAT solvers. This led us to trying out SMT instead of solvers,
+were consumed by @CBMC itself, not the SAT solvers. This led us to try out SMT instead of solvers,
 since translating the problem into SMT logic instead of SAT does not require @CBMC to do so much work.
-Like with the SAT solvers we attempted a portfolio of SMT solvers:
+Like with the SAT solvers, we attempted a portfolio of SMT solvers:
 - Z3 @z3
 - CVC4 @cvc4
 - CVC5 @cvc5
@@ -1399,7 +1545,7 @@ to optimize our code.
 
 = Conclusion <conclusion>
 We thus conclude that we have successfully ported the driver onto L4 at a, most likely,
-comparable performance to ixy. On top of that we succeeded in verifying all the properties
+comparable performance to ixy. On top of that, we succeeded in verifying all the properties
 that we set out to at a relatively small but not irrelevant scale.
 
 Our work might be extended in roughly three directions that we briefly lay out below.
@@ -1414,4 +1560,4 @@ implement and potentially verify a virtio adapter that lets verix communicate wi
 to provide (semi)-verified high-performance networking.
 
 Lastly, as already mentioned above, improving the queue size for which our proof can be conducted
-by improving @CBMC, Kani or our harnesses and thus enabling full verification of the real world application.
+by improving @CBMC, Kani or our harnesses and thus enabling full verification of the real-world application.
