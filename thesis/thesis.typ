@@ -450,11 +450,39 @@ popular tools for (semi)-automated verification of Rust code:
 - Kani @kani
 - Creusot @creusot
 - Prusti @prusti
-An important requirement of our verification effort is the ability to verify `unsafe` code
-reasonably easily. According to its issue tracker, Creusot is currently not capable
-of verifying `unsafe` code at all #footnote[https://github.com/xldenis/creusot/issues/36].
-This already rules it out completely for us. Prusti is not incapable
-of processing `unsafe` code but its automation capabilities are very limited.
+Based on the Rust features used in our code under verification we compiled a list of feature requirements for the tool
+for this job:
+- Core languages features: like control flow, borrowing, structs, and arrays
+  - (mutable) variables
+  - control flow
+  - loops
+  - borrowing
+  - structs and enums
+  - arrays
+- generic types on types and functions
+- traits, including associated types
+- `unsafe`
+- dynamic memory management with `RefCell`
+
+#figure(
+  table(
+    columns: (auto, auto, auto, auto),
+    [*Feature*], [*Kani*],         [*Creusot*],      [*Prusti*],
+    [Core],      [#sym.checkmark], [#sym.checkmark], [#sym.checkmark],
+    [Generics],  [#sym.checkmark], [#sym.checkmark], [#sym.checkmark],
+    [Traits],    [#sym.checkmark], [#sym.checkmark], [#sym.checkmark],
+    [`unsafe`],  [#sym.checkmark], [-],              [-],
+    [`RefCell`], [#sym.checkmark], [#sym.checkmark], [#sym.checkmark],
+  ),
+  caption: [Capabilities of formal verification tools for Rust],
+) <requirements>
+
+As we can see in @requirements the only feature that both Creusot and Prusti are missing
+is the capability to deal with `unsafe` code. Since our program is a driver, a certain degree
+of direct hardware interaction through pointers (or interfaces that abstract pointers) is impossible
+to avoid. For Creusot the lack of `unsafe` support is evident from its issue tracker
+where this is still an open feature request #footnote[https://github.com/xldenis/creusot/issues/36].
+Prusti is not entirely incapable of processing `unsafe` code but its automation capabilities are very limited.
 For example, the following example cannot be verified by Prusti automatically:
 #sourcecode[```rust
 fn test() {
@@ -463,13 +491,13 @@ fn test() {
     unsafe {
         test.as_mut_ptr().write(10);
         if test.as_ptr().read() != 10 {
-            // This panic cannot be hit
+            // We want to prove that this panic is unreachable
             panic!("Ahhh");
         }
     }
 }
 ```]
-Kani on the other hand is fully able to verify these and much more complicated examples,
+Kani on the other hand is capable of verifying these and much more complicated examples,
 which made us pick it for this verification effort.
 
 Kani is implemented as a code generation backend for the Rust compiler. However
@@ -1298,20 +1326,43 @@ up being the limiting factor when trying to scale the queue size up:
     columns: (auto, auto, auto, auto),
     [*Solver*], [*Queue Size*], [*Time (hh:mm:ss)*], [*RAM (GB)*],
     [Minisat], [16], [Timeout], [-],
-    [CaDiCal], [16], [$5:04:39$], [46],
+    [CaDiCal], [16], [$05:04:39$], [46],
     [CaDiCal], [32], [-], [@OOM],
-    [Kissat], [16], [$3:53:56$], [18],
+    [Kissat], [16], [$03:53:56$], [18],
     [Kissat], [32], [-], [@OOM],
-    [Glucose], [16], [$5:42:35$], [19],
+    [Glucose], [16], [$05:42:35$], [19],
     [Glucose], [32], [-], [@OOM],
   ),
   caption: [Resource Consumption of different SAT solvers],
 ) <satres>
 That being said we did observe that the vast majority of memory in the large queue attempts
-were consumed by @CBMC itself, not the SAT solvers. This indicates that if:
+were consumed by @CBMC itself, not the SAT solvers. This led us to trying out SMT instead of solvers,
+since translating the problem into SMT logic instead of SAT does not require @CBMC to do so much work.
+Like with the SAT solvers we attempted a portfolio of SMT solvers:
+- Z3 @z3
+- CVC4 @cvc4
+- CVC5 @cvc5
+As we can see in @smtres this approach did unfortunately not yield further progress. Using both Z3 and
+CVC5 as a backend for @CBMC uncovered a bug in @CBMC where it attempts to access a value in a map that
+is not present. While @CBMC succeeded in generating SMT instances for CVC4 all of these instances
+contained a bit vector declaration of size $0$ which is not accepted by CVC4.
+
+#figure(
+  table(
+    columns: (auto, auto, auto),
+    [*Solver*], [*Queue Size*], [*Result*],
+    [Z3], [16], [Crashed @CBMC],
+    [CVC4], [16], [Crashed CVC4],
+    [CVC5], [16], [Crashed @CBMC],
+  ),
+  caption: [Resource Consumption of different SMT solvers],
+) <smtres>
+These results indicate that simply using a variety of solvers is most likely not the way to go here.
+Instead if:
 - @CBMC itself improves its RAM usage
+- the SMT bugs in @CBMC are fixed
 - Kani improves its Rust to @CBMC translation
-- we figure out a better way to express our proof with future Kani features
+- we figure out a better way to express our proof (possibly with future Kani features)
 we might be able to run our harness on bigger queue sizes as well.
 
 == Performance <perf>
