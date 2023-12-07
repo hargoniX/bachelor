@@ -102,6 +102,8 @@
     }
     show: thmrules
     show raw: set text(font: "JuliaMono", size: 9pt)
+    set list(indent: 1em)
+    set enum(indent: 1em)
 
     // Logo
     v(5%)
@@ -181,18 +183,4 @@
     heading("Appendix", level: 1)
     heading("Glossary", level: 2)
     print-glossary(glossary)
-
-    heading("List of Figures", level: 2)
-    outline(
-      title: none,
-      depth: 3, indent: true,
-      target: figure.where(kind: image),
-    )
-
-    heading("List of Tables", level: 2)
-    outline(
-      title: none,
-      depth: 3, indent: true,
-      target: figure.where(kind: table)
-    )
 }
