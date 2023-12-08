@@ -1084,7 +1084,7 @@ In addition to this, the driver maintains two important invariants:
 
 These two assumptions allow for the receive operation for one packet to be implemented as follows:
 1. Poll until DD at `rx_index` is set to 1.
-2. Remember the buffer that was used at `rx_index` to return it to the allocator later.
+2. Keep the buffer that was used at `rx_index` to return it to the caller later.
 3. Replace the buffer remembered for `rx_index` with a fresh one and write a read descriptor
    with the buffer address as the Packet Buffer Address and DD set to 0 to `rx_index`.
 4. As the descriptor at RDT is already initialized as a read, simply advance RDT and the `rx_index`.
@@ -1134,17 +1134,17 @@ as can be seen in @adv_tx_wb. They only contain a STA field with the same struct
 There is one considerable difference compared to the receive procedure, the buffers have to be returned
 to the @DMA allocator after the hardware marked them as processed. For this reason, the transmit procedure
 maintains 4 additional values:
-1. The @DMA allocator that is shared with the receive part
-2. An array with buffers similar to the one in the receive part
+1. The @DMA allocator that is shared with the receive part.
+2. An array with buffers similar to the one in the receive part.
 3. The `tx_index` which points to the next location we write a packet to.
-4. The `clean_index` which marks the location of the next descriptor that we need to free
+4. The `clean_index` which marks the location of the next descriptor that we need to free.
 
 The driver only maintains one invariant on this state, `tx_index` is always equal to TDT.
 The procedure for transmitting a packet is unsurprisingly also very similar to the receive one:
 1. "Clean" the queue by freeing as many buffers as possible. This step frees all buffers
    from `clean_index` to the first one that doesn't have DD set.
 2. Insert the read descriptor at `tx_index`.
-3. Replace the buffer that we remember for `tx_index` with the one that was just placed
+3. Replace the buffer that we remember for `tx_index` with the one that was just placed.
 4. Advance TDT and `tx_index`.
 
 Just like the receive procedure the transmit one also implements a batching procedure on top of this by repeating steps
