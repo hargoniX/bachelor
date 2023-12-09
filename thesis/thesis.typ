@@ -70,7 +70,7 @@ While verifying network stacks and applications requires substantial resources d
 To our knowledge, there do not exist network drivers whose interaction with the @NIC itself has been formally verified.
 Instead, the focus is usually put on other issues that arise in driver implementation:
 - @witowski2007drivers and @ball2004slam are mostly concerned with the driver interactions with the rest of the kernel
-  as well as the absence of C-related issues
+  as well as the absence of memory safety issues due to most drivers being written in C.
 - @more2021hol4drivers implements a verified monitor for interactions of a real driver with the @NIC instead of verifying the driver itself.
    While this means that bad interactions with the hardware can now be detected at runtime this still has to be done in a way that is
   preventing the driver from its regular operations which usually means a crash.
@@ -155,7 +155,7 @@ are managed by the @IOMMU, we can allow our user space tasks to safely manage th
 
 #figure(
   image("figures/io-overview.svg", width: 80%),
-  caption: [Io architecture],
+  caption: [IO architecture],
 ) <l4io>
 
 The only missing piece now is where a program can obtain the necessary capabilities
@@ -262,7 +262,7 @@ restrictions while running.
 If these wrapper types are still not enough to resolve the situation one can
 fall back to using `unsafe` code. However, writing buggy `unsafe` code will not
 lead to compiler or run time errors but instead undefined behavior like in C/C++.
-A common `unsafe` example is splitting a slice (a fat pointer) into two:
+A common `unsafe` example is splitting a slice, Rust's notion of a fat pointer, into two:
 #sourcecode[```rust
 unsafe fn split_at_unchecked<T>(data: &[T], mid: usize) -> (&[T], &[T]) {
     let len = data.len();
@@ -270,9 +270,10 @@ unsafe fn split_at_unchecked<T>(data: &[T], mid: usize) -> (&[T], &[T]) {
     (from_raw_parts(ptr, mid), from_raw_parts(ptr.add(mid), len - mid))
 }
 ```]
-Note that we had to declare the function itself as `unsafe` as well since calling
-`unsafe` functions is "viral" in Rust. That said we can provide safe API wrappers
-around them that ensure preconditions for using the unsafe API are met. In this
+Note that we had to declare the function itself as `unsafe` since calling
+`unsafe` functions is "viral" in Rust, i.e. if something calls `unsafe` code
+it is considered `unsafe` itself. That said we can provide safe API wrappers
+around them that ensure preconditions for using the `unsafe` API are met. In this
 example, we have to ensure that `mid <= len` to prevent the second slice from
 pointing into memory outside of the original one:
 #sourcecode[```rust
@@ -1557,7 +1558,7 @@ that we set out to at a relatively small but not irrelevant scale.
 
 Our work might be extended in roughly three directions that we briefly lay out below.
 
-First off one could attempt to turn `pc-hal` into a truly generic hardware abstraction layer
+First off, one could attempt to turn `pc-hal` into a truly generic hardware abstraction layer
 like `embedded-hal` and thus achieve portable Rust-based user space drivers across multiple
 operating systems.
 
