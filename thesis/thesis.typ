@@ -63,16 +63,16 @@ Networking represents a key interaction point with the outside world for most cu
 - the network stack
 - networking application
 While verifying network stacks and applications requires substantial resources due to their complexity, verification of @NIC drivers is much more approachable since they have only two jobs:
-1. Setting up the @NIC
+1. Setting up the @NIC.
 2. Handling the receiving and transmission of packets.
 
 // Summarize why nobody else has adequately answered the research question yet.
 To our knowledge, there do not exist network drivers whose interaction with the @NIC itself has been formally verified.
 Instead, the focus is usually put on other issues that arise in driver implementation:
-- @witowski2007drivers and @ball2004slam are mostly concerned with the driver interactions with the rest of the kernel
+- @witowski2007drivers and @ball2004slam are mostly concerned with the driver interactions with the rest of the kernel,
   as well as the absence of memory safety issues due to most drivers being written in C.
 - @more2021hol4drivers implements a verified monitor for interactions of a real driver with the @NIC instead of verifying the driver itself.
-   While this means that bad interactions with the hardware can now be detected at runtime this still has to be done in a way that is
+   While this means that bad interactions with the hardware can now be detected at runtime, this still has to be done in a way that is
   preventing the driver from its regular operations which usually means a crash.
 
 // Explain, in one sentence, how you tackled the research question.
@@ -80,17 +80,17 @@ In this thesis, we show that formally verifying the interaction of a driver with
 We do this by implementing a model of the target hardware and using @BMC to prove that they cooperate correctly.
 
 // How did you go about doing the research that follows from your big idea?
-To show that the concept is viable in practice we implement a driver for the widely used Intel 82599 @NIC.
+To show that the concept is viable in practice, we implement a driver for the widely used Intel 82599 @NIC.
 This is done on the L4.Fiasco @l4doc microkernel, which provides a minimal trusted code base for our verification effort
 to build upon.
 
 On top of that, we use the Rust programming language which guarantees additional safety properties out of the box.
 The driver and model themselves use a custom Rust @DSL, based on ideas developed by the Rust Embedded @WG, to make correct peripheral access easier.
 Finally, we show, using the Kani @BMC @kani, that the driver correctly cooperates with a model of the 82599 where correctly means that:
-- The driver doesn't panic (safety)
-- The driver doesn't put the model into an undefined state (safety)
-- The driver receives all packets that are received by the model (correctness)
-- The driver correctly instructs the model to send packets (correctness)
+- The driver doesn't panic (safety).
+- The driver doesn't put the model into an undefined state (safety).
+- The driver receives all packets that are received by the model (correctness).
+- The driver correctly instructs the model to send packets (correctness).
 
 This thesis can be split roughly into four parts. First, we give brief introductions to
 the used technologies in @background. We then demonstrate how we used these technologies to
@@ -101,7 +101,7 @@ limitations of our approach in @evaluation and finally draw our conclusions in @
 In this chapter, we introduce the three key technologies that were used in our verification effort.
 First, we give a brief introduction to the rather uncommon ways that L4 allows us to interact with
 our target hardware from the userspace in @l4. Afterwards, we explain the features of Rust
-that are important in understanding the driver implementation later on in @rust. Finally, we give
+that are important for understanding the driver implementation later on in @rust. Finally, we give
 an overview of the formal verification tooling that currently exists for Rust, argue why
 we preferred Kani over the others, and demonstrate its capabilities in @formal-rust.
 
@@ -109,15 +109,15 @@ we preferred Kani over the others, and demonstrate its capabilities in @formal-r
 As a microkernel, L4.Fiasco offers barely any functionality on a kernel level.
 Instead, the kernel hands out hardware resources to user space tasks which
 can use them or distribute them further to other tasks. This allows us to
-limit the number of things that a task can interact with to the bare minimum
+limit the number of things that a task can interact with to the bare minimum,
 which reduces the attack surface drastically. The default set of user space programs
 and libraries that ships with L4.Fiasco is the @L4Re.
 In the following, we illustrate the three main @L4Re interaction mechanisms used
 by our driver.
 
 The most basic mechanism are so-called capabilities. A capability is in a sense
-comparable to a file descriptor. It describes an object that is somewhere in the
-kernel and allows us to communicate with that object in some way. The difference to
+comparable to a file descriptor. It identifies an object that is somewhere in the
+kernel, allowing us to communicate with that object in some way. The difference to
 a file descriptor is that any object that we get from the kernel is described by
 a capability: threads, access to hardware, @IPC gates to other tasks, etc.
 #figure(
@@ -125,7 +125,7 @@ a capability: threads, access to hardware, @IPC gates to other tasks, etc.
   caption: [Capabilities],
 ) <l4caps>
 
-This means that the set of capabilities that we initially grant our driver completely
+This means that the set of capabilities that we initially grant our driver, completely
 determines the way it may interact with the rest of the operating system. As a consequence,
 even if our driver ends up getting compromised despite our efforts, the effects that it
 can have on the system as a whole are limited.
@@ -133,11 +133,11 @@ can have on the system as a whole are limited.
 The separation of features out of the kernel in L4.Fiasco even goes as far as
 removing memory management from the kernel. Instead, a so-called pager task is
 designated as the memory manager of one or multiple threads. Once one of these
-threads causes a page fault the kernel sends the pager an @IPC notification
+threads causes a page fault, the kernel sends the pager an @IPC notification
 and the pager returns either the backing page or an error. In the successful case,
 the kernel then proceeds to map that page into the address space of the faulting
 thread. This allows the system to construct a hierarchy of memory mappings between tasks.
-One task can grant a portion of its memory to another task which can in turn only
+One task can grant a portion of its memory to another task,, which can in turn only
 grant another sub-portion of that memory to another task etc.
 
 While this can be used to implement normal functionality like an allocator, it is
@@ -145,7 +145,7 @@ also an interesting feature for implementing programs that interact with hardwar
 It is very common for a driver to share some of its own memory with the hardware
 directly to allow high-performance communication, this is called @DMA. However, allowing
 hardware arbitrary access to memory is a risk in two ways:
-1. The hardware might overwrite or steal arbitrary memory contents
+1. The hardware might overwrite or steal arbitrary memory contents.
 2. The driver that interacts with the hardware might do the same by instructing
    the hardware to, for example, write its data to an address the driver does not
    usually have access to.
@@ -164,9 +164,9 @@ The IO server is a task that owns all resources related to hardware that are not
 by the kernel itself. This includes the PCI(e) bus, interrupts, IO memory, and more.
 Thus to access hardware a task needs to have an @IPC capability to talk with
 the IO server. Instead of allowing processes with such a capability to obtain arbitrary
-hardware resources each client is granted a limited view of the hardware in the form
+hardware resources, each client is granted a limited view of the hardware in the form
 of a so-called @VBus.
-As we can see in @l4io this allows us to limit the hardware that a task can see to the
+As we can see in @l4io, this allows us to limit the hardware that a task can see to the
 bare minimum required for operation, again following the minimal privilege principle
 from the capability system.
 
@@ -197,8 +197,8 @@ default is to limit the number of moving pieces in a program to a minimum. This
 allows programmers to argue more easily about their code as there are fewer moving pieces.
 On top of that, it plays an important role in Rust's approach to memory safety.
 
-The most notable feature of Rust that distinguishes it from other widely used
-programming languages is ownership and the part of the compiler that enforces it,
+The most notable feature of Rust, that distinguishes it from other widely used
+programming languages, is ownership and the part of the compiler that enforces it,
 the borrow checker. It is the key feature in providing memory safety per default.
 As the name suggests, every value in Rust has an owner. The compiler enforces
 that there can only be exactly one owner of a value at a time. Once this owner
@@ -206,8 +206,8 @@ goes out of scope the value gets freed, or in Rust terms, dropped.
 
 On top of this, a value can be moved from one owner to another. This happens in
 two situations:
-1. A value is returned from a function
-2. A value is passed into another function
+1. A value is returned from a function.
+2. A value is passed into another function.
 Once a value has been moved the previous owner is not capable of accessing it
 anymore. For example, the following program is not accepted by the compiler:
 #sourcecode[```rust
@@ -232,7 +232,7 @@ references can never outlive the value they are referring to.
 Keeping up the distinction between mutable and immutable values Rust supports two kinds of references:
 1. Immutable ones: `&var : &Type`, they are a read-only view of the data
 2. Mutable ones: `&mut var: &mut Type`, they are a read-and-write view of the data
-To prevent data races at compile time the borrow checker provides the
+To prevent data races at compile time, the borrow checker provides the
 additional guarantees that a value can either:
 - be immutably referenced one or more times
 - or be mutably referenced a single time
@@ -261,7 +261,7 @@ restrictions while running.
 
 If these wrapper types are still not enough to resolve the situation one can
 fall back to using `unsafe` code. However, writing buggy `unsafe` code will not
-lead to compiler or run time errors but instead undefined behavior like in C/C++.
+lead to compiler or run time errors, but instead undefined behavior like in C/C++.
 A common `unsafe` example is splitting a slice, Rust's notion of a fat pointer, into two:
 #sourcecode[```rust
 unsafe fn split_at_unchecked<T>(data: &[T], mid: usize) -> (&[T], &[T]) {
@@ -282,7 +282,7 @@ fn split_at<T>(data: &[T], mid: usize) -> (&[T], &[T]) {
     unsafe { data.split_at_unchecked(mid) }
 }
 ```]
-Using the `unsafe` block feature like here is an instruction to the compiler to
+Using the `unsafe` block feature like here, is an instruction to the compiler to
 trust the programmer that the contained code is safe in this context. The context
 in the above function being that we already asserted the necessary preconditions.
 
@@ -299,7 +299,7 @@ impl Drop for File {
 ```]
 
 Traits in Rust fulfill a similar purpose to interfaces in languages like Java.
-However, they are strongly inspired by type classes from languages like Haskell
+However, they are strongly inspired by type classes from languages like Haskell,
 and thus provide a few extra features on top of the classical interface concept.
 
 Declaring an interface style trait like `Drop` from above looks like this:
@@ -323,7 +323,7 @@ where
     }
 }
 ```]
-If we try to call `add` on a pair value Rust will start looking for fitting instances
+If we try to call `add` on a pair, Rust will start looking for fitting instances
 for the types of the values contained in the pairs. In particular, it will recursively
 chain this instance to figure out how to add values of types like `(u8, (u8, u8))`.
 
@@ -349,7 +349,7 @@ impl Add<Duration, Time> for Time {
 There is one drawback to this approach: To find an `Add` instance
 all of the types involved have to be known. Otherwise, the trait system cannot
 know whether to use the first or the second instance. While it is very likely that
-the compiler already knows the input types it is much less likely that it will be
+the compiler already knows the input types, it is much less likely that it will be
 able to figure out the output type on its own. This would force users to put explicit
 type annotations to make the instance search succeed. To make using this trait easier
 we can use so-called associated types, similar to functional dependencies in Haskell typeclasses:
@@ -374,15 +374,15 @@ impl Add<Duration> for Time {
 
 Rust enforces that there can only be one instance for one assignment of generic
 variables. This means that while we could have previously written instances like
-`Add<Duration, Time> for Time` and `Add<Duration, Duration> for Time` the new design
+`Add<Duration, Time> for Time` and `Add<Duration, Duration> for Time`, the new design
 doesn't allow this as we would have two instances of the form `Add<Duration> for Time`.
-While associated types take a bit of flexibility away from the programmer they do
+While associated types take a bit of flexibility away from the programmer, they do
 allow Rust to start instance search without all involved types figured out through type inference.
 Whether to use generic or associated types thus comes down to a usability
 (through type inference) vs flexibility (through additional permitted instances) trade-off.
 
 While the recursive chaining of trait instances already allows a great deal of
-compile-time code generation there are situations where traits are not sufficient.
+compile-time code generation, there are situations where traits are not sufficient.
 A common case is to automatically generate the same code for a list of identifiers to e.g.
 test them or add similarly shaped trait instances to all of them.
 This is where Rust's macro system comes into play. Unlike the substitution-based macros in C/C++,
@@ -390,7 +390,7 @@ Rust's macro system allows users to write proper syntax tree to syntax tree tran
 Generally speaking, Rust supports two kinds of macros:
 1. declarative macros, they use an @EBNF inspired @DSL to specify the transformation
 2. procedural macros, they use arbitrary Rust code for the transformation
-The macros used in this work are exclusively declarative ones so we only describe this approach.
+The macros used in this work are exclusively declarative ones, so we only describe this approach.
 To illustrate the capabilities of declarative macros we embed a small math @DSL into Rust:
 #sourcecode[
 ```
@@ -423,7 +423,7 @@ As we can see this macro has 3 "production rules":
    remaining token tree list is empty.
 
 The above macro also demonstrates an important guarantee of Rust macros, macro hygiene.
-We call a macro system hygienic when identifiers that are used within the body of a macro
+We call a macro system hygienic, when identifiers that are used within the body of a macro
 (like `let x = format...`) cannot collide with user-provided identifiers (like the `x` from the input).
 So instead of `x` suddenly turning out to be a string once we want to print it, Rust
 kept the values separate and the following main function produces the expected output:
@@ -443,7 +443,7 @@ Value: 2
 Value: 1
 ```
 The precise workings of the declarative macro syntax and all the kinds
-of syntax that can be matched on are far out of the scope of this work so we refer to
+of syntax that can be matched on are far out of the scope of this work, we refer to
 @rustmacrobook for a more detailed introduction.
 
 == Formal Verification in Rust <formal-rust>
@@ -451,11 +451,11 @@ In this section we explain why we chose Kani over other available formal verific
 tools for Rust and give an overview over both the stable and unstable features of Kani.
 
 To our knowledge there do currently exist three actively maintained and reasonably
-popular tools for (semi)-automated verification of Rust code:
+popular tools for (semi-)automated verification of Rust code:
 - Kani @kani
 - Creusot @creusot
 - Prusti @prusti
-Based on the Rust features used in our drier code we compiled a list of feature requirements for a tool
+Based on the Rust features used in our driver code we, compiled a list of feature requirements for a tool
 that we could use to verify the driver:
 - Core language features:
   - (mutable) variables
@@ -482,12 +482,12 @@ that we could use to verify the driver:
   caption: [Capabilities of formal verification tools for Rust],
 ) <requirements>
 
-As we can see in @requirements the only feature that both Creusot and Prusti are missing
+As we can see in @requirements, the only feature that both Creusot and Prusti are missing
 is the capability to deal with `unsafe` code. Since our program is a driver, a certain degree
 of direct hardware interaction through pointers (or interfaces that abstract pointers) is impossible
 to avoid. For Creusot, the lack of `unsafe` support is evident from its issue tracker
 where this is still an open feature request #footnote[https://github.com/xldenis/creusot/issues/36].
-Prusti is not entirely incapable of processing `unsafe` code but its automation capabilities are very limited.
+Prusti is not entirely incapable of processing `unsafe` code, but its automation capabilities are very limited.
 For example, the following example cannot be verified by Prusti automatically:
 #sourcecode[```rust
 fn test() {
@@ -545,11 +545,11 @@ Failed Checks: attempt to calculate the remainder with a divisor of zero
 Failed Checks: This is a placeholder message; Kani doesn't support message formatted at runtime
  File: ".../raw_vec.rs", line 545, in alloc::raw_vec::capacity_overflow
 ```
-As we just saw we can use the `kani::any()` function to generate arbitrary symbolic
+As we just saw, we can use the `kani::any()` function to generate arbitrary symbolic
 values of basic types like integers. These basic values can then be used to build
 up more complex symbolic values like the `Vec<u32>` from above. However, there is
 one more issue than expected with the proof, the harness caused an error
-in the allocator for `Vec` because it is possible to request too much memory. Since the error is
+in the allocator for `Vec`. This is because there is a limit to how much memory we can request. Since the error is
 introduced by the proof code itself, instead of the code we wish to verify, we probably
 want to get rid of it. This can be achieved by putting a constraint on `size`
 using the `kani::assume()` function:
@@ -614,7 +614,7 @@ fn check_get_wrapped() {
     get_wrapped(&array, index);
 }
 ```]
-This changes nothing about the failures that we end up finding but an additional remark
+This changes nothing about the failures that we end up finding, but an additional remark
 about the satisfied cover properties gets added to the output:
 ```
 SUMMARY:
@@ -624,13 +624,13 @@ SUMMARY:
 ```
 
 In all of the examples above no loops are used, this makes it easy for Kani to
-explore the entire state space. Once we introduce loops Kani has two strategies
+explore the entire state space. Once we introduce loops, Kani has two strategies
 to explore the state space.
 
 The first approach is to unwind the loops a limited amount of times, just enough to explore
 the entire state space. In many situations, we need to limit the state space that we wish to
-consider in the first place as unwinding too much ends up generating too large problem instances
-to compute with reasonable resources. In the following, we will consider a new function, `zeroize`
+consider in the first place, as unwinding too much ends up generating too large problem instances
+to compute with reasonable resources. In the following, we will consider a new function `zeroize`,
 which clears an array of bytes to all $0$. We wish to verify that the function does this for every
 slot of the array:
 #sourcecode[```rust
@@ -654,9 +654,9 @@ fn check_zeroize() {
     assert!(buffer[index] == 0);
 }
 ```]
-When we run Kani on this we end up unwinding the loop in `zeroize` indefinitely.
-To limit loop unwinding we have to tell the harness about a limit explicitly.
-If this limit is too low to explore the given state space Kani complains:
+When we run Kani on this, we end up unwinding the loop in `zeroize` indefinitely.
+To limit loop unwinding, we have to tell the harness about a limit explicitly.
+If this limit is too low to explore the given state space, Kani complains:
 #sourcecode[```rust
 #[cfg(kani)]
 #[kani::unwind(1)]
@@ -673,26 +673,27 @@ fn check_zeroize() {
     assert!(buffer[index] == 0);
 }
 ```]
-Instead of simply verifying only one loop iteration Kani tells us that this
+Instead of simply verifying only one loop iteration, Kani tells us that this
 bound is too low:
 ```
 Failed Checks: unwinding assertion loop 0
 ```
-Once we increase it to $32$ all checks pass. However, there exists a scalability issue
-here. Once we ramp the size up to $64$ or larger @CBMC ends up consuming several GB of
+Once we increase it to $32$, all checks pass. However, there exists a scalability issue
+here. Once we ramp the size up to $64$ or larger, @CBMC ends up consuming several GB of
 RAM to solve the same underlying problem as before.
 
-For situations like this Kani provides an experimental alternative called Loop-contract synthesis.
-This uses an approach described in @invariants to synthesize invariants that describe
-the behavior of loops. The biggest limitation of the current implementation is that it is
+For situations like this, Kani provides an experimental alternative called Loop-contract synthesis.
+This uses an approach described in @invariants, to synthesize invariants that describe
+the behavior of loops. The biggest limitation of the current implementation is, that it is
 not compatible with loop unwinding. This means that we cannot use Loop-contract synthesis for a few
-loops that we don't wish to unwind but the rest of the program is too hard to synthesize contracts
+loops that we don't wish to unwind, but the rest of the program is too hard to synthesize contracts
 for we cannot use the synthesis selectively. That said this issue is not an inherent limitation
 of the approach and there do exist ideas on how to change this in the feature proposal
 #footnote[https://github.com/model-checking/kani/blob/6d628bf0b399b8c50ddea9f011321463e4c00e4c/rfc/src/rfcs/0004-loop-contract-synthesis.md].
 The experimental state of the feature also shows when attempting to use it on slightly non-trivial
 examples like the above. When enabling it through the
-`--synthesize-loop-contracts` flag the component of @CBMC responsible for computing the invariants ends up crashing.
+`--synthesize-loop-contracts` flag, the component of @CBMC responsible for computing the invariants ends up
+crashing #footnote[Reported at: https://github.com/model-checking/kani/issues/2927].
 
 The last notable feature is stubbing. It allows us to
 replace functions in the code under verification with different functions. This is useful
@@ -730,9 +731,9 @@ fn check_interaction() {
 ```]
 
 On top of stubs, Kani provides another experimental feature called function contracts.
-The idea here is to describe the pre- and postconditions of a function and then replace
+The idea here is to describe the pre- and postconditions of a function, and then replace
 all calls to this function with a stub that asserts the preconditions and assumes the postconditions.
-This allows us to verify functions in a modular fashion and thus enables us to verify much larger
+This allows us to verify functions in a modular fashion, thus enabling us to verify much larger
 bodies of code piece by piece instead of translating everything at once into a @CBMC problem.
 For example, we can provide a contract for a division function:
 #sourcecode[```rust
@@ -766,13 +767,13 @@ mod kani {
     }
 }
 ```]
-While this particular harness ends up succeeding there are many scenarios that this
+While this particular harness ends up succeeding, there are many scenarios that this
 overapproximation of `my_div`'s behavior leaves out. For example using `2 * (array.len() - 1) / 2`
-as `index` ends up failing because the contract only claims that the result will be less than
-or equal to `2 * array.len() - 2` which is not sufficient to establish that we are in bounds.
+as `index` ends up failing, because the contract only claims that the result will be less than
+or equal to `2 * array.len() - 2`, which is not sufficient to establish that we are in bounds.
 Thus when doing verification with contracts we need to design them in a way to fit the consumer
 of the contract in other proofs, instead of just letting Kani and @CBMC figure everything out on their own.
-Unfortunately, side effects on memory and quantifier logic in the pre and postconditions
+Unfortunately, side effects on memory and quantifier logic in the pre- and postconditions
 are currently only addressed in the contract proposal #footnote[https://github.com/model-checking/kani/blob/6d628bf0b399b8c50ddea9f011321463e4c00e4c/rfc/src/rfcs/0009-function-contracts.md]
 and not yet implemented. Since the majority of behavior in a driver are memory
 effects, we cannot use this feature for our verification purposes.
@@ -793,11 +794,11 @@ The communication with the Intel 82599 happens in roughly three phases:
 2. Configuration of the actual device
 3. Sending and receiving packets
 In the following chapter, we aim to give an overview of these three sections with
-a particular focus on the third one as this is our main verification concern.
+a particular focus on the third one, as this is our main verification concern.
 
 A normal driver would initially have to look for the device on its own. However, as we are
 on L4, the IO server instead searches for these devices and presents them
-to us through a @VBus. Once we have obtained this device handle we can start
+to us through a @VBus. Once we have obtained this device handle, we can start
 talking to it through the PCI config space.
 
 This config space is in essence a memory-like structure that we can read from and write to using
@@ -809,7 +810,7 @@ our CPU and the device which we can use for @MMIO based configuration.
 The datasheet
 of the device @intel:82599 tells us that the relevant @BAR for configuring the device
 is the first one. Thus the first thing the driver has to do is ask the IO server
-to map the memory that @BAR 0 points to into our address space so we can actually
+to map the memory, that @BAR 0 points to, into our address space, so we can actually
 begin device initialization.
 
 #figure(
@@ -828,7 +829,7 @@ begin device initialization.
   caption: [Beginning of the PCI config space]
 ) <pcicfg>
 
-After this mapping is done the driver has to follow the initialization procedure
+After this mapping is done, the driver has to follow the initialization procedure
 described in section 4.6.3 of @intel:82599. Almost all of this configuration can
 be done exclusively through the @MMIO based interface that was established previously.
 
@@ -841,32 +842,32 @@ mapped buffers in total:
 - one for the RX queue
 - one for the TX queue
 - one as a memory pool for packet buffers
-After this setup is done the actual communication with the network can begin.
-The details of this queue-based communication as well as its verification are
-discussed in @verix and @mix as they are the main investigation points of this work.
+After this setup is done, the communication with the network can begin.
+The details of this queue-based communication, as well as its verification. are
+discussed in @verix and @mix.
 
 == The driver <verifying-verix>
 In this chapter, we explain how we developed and verified the driver itself.
 The rough architecture for the project is laid out in @arch. The end product is
-an application called `verix-fwd` which mirrors received packets back to the sender.
-`verix-fwd` is mainly powered by `verix-lib` which is the actual driver and the subject
+an application called `verix-fwd`, which mirrors received packets back to the sender.
+`verix-fwd` is mainly powered by `verix-lib`, which is the actual driver and the subject
 of our verification efforts.
 #figure(
   image("figures/drawio/verix-arch.drawio.pdf.svg", width: 80%),
   caption: [Architecture]
 ) <arch>
 
-`verix-lib` in turn does not directly talk to the hardware but rather through an abstract
+`verix-lib` in turn does not directly talk to the hardware, but rather through an abstract
 interface called `pc-hal` which has two implementations:
 1. `pc-hal-l4`, this is the one we actually used in production on real-world hardware. It implements
    the abstract interface provided by `pc-hal` by calling into the responsible L4 APIs.
-   It is discussed in @pc-hal
+   It is discussed in @pc-hal.
 2. `mix`, the "model ix". It provides a software model of the @NIC that implements the `pc-hal`
-    abstract interface. When plugged into `verix-lib` instead of `pc-hal-l4` we can use Kani
-    to verify properties about the interaction of the driver with the modeled @NIC.
-    It is discussed in @mix.
+   abstract interface. When plugged into `verix-lib` instead of `pc-hal-l4` we can use Kani
+   to verify properties about the interaction of the driver with the modeled @NIC.
+   It is discussed in @mix.
 
-The code for both the driver as well as the verification project can be found on Github
+The code for the driver and the verification harnesses can be found on Github
 #footnote[https://github.com/hargoniX/rustl4re/tree/master/src/l4/pkg/verix].
 
 === pc-hal <pc-hal>
@@ -877,11 +878,11 @@ Rust Embedded @WG's `embedded-hal` #footnote[https://docs.rs/embedded-hal/0.2.7/
 - @VBus interface
 - PCI config space
 - raw pointer-based @MMIO interfaces
-Demonstrating how all of these interfaces work would be out of the scope of this work
+Demonstrating how all of these interfaces work would be out of the scope of this work,
 so we instead only give an exemplary view of the PCI config space abstraction.
-It is implemented as a single trait, `FaillibleMemoryInterface32`:
+It is implemented as a single trait, `FallibleMemoryInterface32`:
 #sourcecode[```rust
-pub trait FailibleMemoryInterface32 {
+pub trait FallibleMemoryInterface32 {
     type Error;
     type Addr;
 
@@ -893,7 +894,7 @@ pub trait FailibleMemoryInterface32 {
     fn read32(&self, offset: Self::Addr) -> Result<u32, Self::Error>;
 }
 ```]
-The interface has to be designed in a fallible way because as discussed previously
+The interface has to be designed in a fallible way, because as discussed previously
 the communication with the PCI config space happens through @IPC, which can return errors.
 In addition to that, we also abstract over the address data type to possibly
 allow more diverse usage of this trait in other applications if they ever arise.
@@ -911,7 +912,7 @@ In addition to the traits `pc-hal` also provides a few utility functions that wo
 on top of them. The most notable one here is a type-safe @MMIO abstraction in the spirit
 of the Rust Embedded @WG's `svd2rust` tool. `svd2rust` allows Rust Embedded developers
 to automatically generate type-safe implementations for @MMIO interfaces of ARM and RISC-V chips.
-The need for such a type-safe API arose because interacting with an @MMIO interface in Rust
+The need for such a type-safe API arose, because interacting with an @MMIO interface in Rust
 uses direct pointer manipulation together with lots of constants and bit operations:
 #sourcecode[```rust
 pub const IXGBE_CTRL: u32 = 0x00000;
@@ -932,7 +933,7 @@ self.set_reg32(IXGBE_CTRL, IXGBE_CTRL_RST_MASK);
 ```]
 
 `svd2rust` provides a type-safe version of this API by automatically generating code from an XML-based interface description,
-the SVD files. While such files are not available for the Intel 82599 we end up generating an
+the SVD files. While such files are not available for the Intel 82599 we, end up generating an
 API that works very similarly to the `svd2rust` ones. However, our implementation is no file-to-file converter
 but instead implemented as a declarative Rust macro. The user interface of our macro looks as follows:
 
@@ -953,7 +954,7 @@ mm2types! {
 }
 ```]
 We declare a device called `Intel82599` which has @MMIO registers of size 32-bit.
-This device has an @MMIO interface called `Bar0` which contains a register `ctrl` at offset `0x0`
+This device has an @MMIO interface called `Bar0`, which contains a register `ctrl` at offset `0x0`
 which is readable and writable and has several fields at certain bit ranges.
 The equivalent of the above register access looks as follows in our API:
 #sourcecode[```rust
@@ -962,7 +963,7 @@ bar0.ctrl().modify(|_, w| w.lrst(1).rst(1));
 While this involves a closure and several function calls, all of the operations here end up
 getting inlined and optimized by the compiler. This optimization is so good, that our code
 ends up producing the same assembly code as the pointer-based interface above. Describing
-how the entire `svd2rust` style API works is out of scope here but can be found in its documentation
+all the details of `svd2rust` style APIs is out of scope here, but they can be found in its documentation
 #footnote[https://docs.rs/svd2rust/0.30.2/svd2rust/index.html].
 
 In addition to this, the macro also supports 64-bit based @MMIO which we use to generate
@@ -997,7 +998,7 @@ desc.pkt_addr().write(|w| w.pkt_addr(device_addr));
 ```]
 
 === verix <verix>
-As mentioned above verix is the code that interacts with the hardware and thus
+As mentioned above, verix is the code that interacts with the hardware and thus
 the code that we are interested in verifying. The driver itself is largely
 based on the ixy driver, originally published in @emmerichixy and later ported to Rust in
 @ellmannixy. The three main differences between our port and the Rust original
@@ -1010,7 +1011,7 @@ are:
 Since the initial device setup is simply a linear list of @MMIO interactions,
 we won't go into the details of how the driver performs these steps.
 The packet receive and transmit procedures on the other hand are more involved.
-We begin by explaining the receive procedure as it is slightly simpler than the transmit one.
+We begin by explaining the receive procedure, as it is slightly simpler than the transmit one.
 
 As mentioned in @intel-nic packet receiving is done through a @DMA mapped queue.
 This queue is implemented as a ring buffer in memory. The state of this queue is
@@ -1028,7 +1029,7 @@ An example state of an RX queue, configured with 8 slots, might thus look like t
 According to Section 7.1 of @intel:82599 this state is to be interpreted as follows:
 1. The slots $1, 2, 3, 4$ (the interval $["RDH", "RDT")$) are owned by the hardware and contain so-called read descriptors.
 2. The slots $5, 6, 7, 0$ (the interval $["RDT", "RDH")$) are owned by the software and are either being currently
-   processed or there is currently no packet buffer free to turn them back into read descriptors.
+   processed, or there is currently no packet buffer free to turn them back into read descriptors.
 Both of these descriptor types are $2 dot.c 64$ bit value long structures.
 Read descriptors, as can be seen in @adv_rx_read, are very basic. They consist of three parts:
 1. The Packet Buffer Address, this is a pointer to the @DMA mapped slice of memory that we expect
@@ -1042,12 +1043,12 @@ read descriptor and sets the DD bit. After that is done a write-back descriptor,
 @adv_rx_wb, is put into the consumed slot. This descriptor kind contains a lot of meta information,
 most of which concerns more advanced features. The fields that are relevant in the basic
 configuration setup of verix are:
-1. The packet length which contains how many bytes of the buffer in the read descriptor were used for a received packet
+1. The packet length which contains how many bytes of the buffer in the read descriptor were used for a received packet.
 2. The extended status register which contains two fields that are relevant to us:
    1. The EOP bit, if set indicates the end of a packet. This is relevant because the @NIC can in theory
       be configured to split up packets across multiple descriptors. As we don't use this feature we expect EOP to
-      always be set
-   2. The DD bit at the same position as the DD bit in the read descriptor and serves the same purpose
+      always be set.
+   2. The DD bit at the same position as the DD bit in the read descriptor and serves the same purpose.
 
 After this procedure is done the hardware advances RDH, possibly overflowing back to the start
 of the ring buffer while doing so.
@@ -1073,7 +1074,7 @@ itself:
 1. A @DMA allocator that manages the buffers in the @DMA mapped packet buffer array. It can request memory in buffers of 2048
    byte. This is sufficient for all packets as they cannot exceed the @MTU of 1500 bytes.
 2. An array with the same amount of slots as the ring buffer. Here it saves which buffer is used for which slot in the
-   ring buffer as this information is not preserved by the write-back descriptor.
+   ring buffer, as this information is not preserved by the write-back descriptor.
 3. The `rx_index`, it contains the location that the driver will read the next packet from. This allows it to simply poll the
    DD bit of the descriptor at `rx_index` to figure out whether a packet was received.
 
@@ -1081,7 +1082,7 @@ In addition to this, the driver maintains two important invariants:
 1. `rx_index` is always $"RDT" + 1$.
 2. It strengthens the assumption of the hardware that all descriptors in the interval $["RDH", "RDT")$ contain
    read descriptors to the interval $["RDH", "RDT"]$. This is valid as the descriptor at RDT is owned
-   by the software so it can keep it in whatever state it wants to.
+   by the software, so it can keep it in whatever state it wants to.
 
 These two assumptions allow for the receive operation for one packet to be implemented as follows:
 1. Poll until DD at `rx_index` is set to 1.
@@ -1091,23 +1092,23 @@ These two assumptions allow for the receive operation for one packet to be imple
 4. As the descriptor at RDT is already initialized as a read, simply advance RDT and the `rx_index`.
    This gives the hardware a new read descriptor to work with and maintains the second invariant.
 
-On top of this the driver implements a batching mechanism that repeats the procedure up to a certain batch size in
+On top of this, the driver implements a batching mechanism that repeats the procedure up to a certain batch size in
 order to increase performance.
 
 The structure of the TX queue is the same as the RX one, except that the registers are called TDBAL, TDBAH, TDLEN, TDH, and TDT.
 However, the structure of the descriptors themselves is drastically different. The read ones contain a large
-amount of meta information this time as can be seen in @adv_tx_read, the relevant pieces for our basic configuration
+amount of meta information this time, as can be seen in @adv_tx_read, the relevant pieces for our basic configuration
 are:
 1. The Packet Buffer Address, it points to the data that we wish to send.
 2. The PAYLEN, it contains how large the packet is as a whole. As we again only use single descriptor packets this
    has the same value as DTALEN.
-3. The DTYP contains what kind of descriptor we are using since the hardware also supports a legacy format. This is always
+3. The DTYP contains what kind of descriptor we are using, since the hardware also supports a legacy format. This is always
    set to the advanced format in our driver.
 4. The DCMD is a bit set for a series of options, the relevant ones for our configuration are:
-   1. DEXT which indicates that we use advanced descriptors as well
-   2. RS which makes the hardware report the status of the descriptor by setting the DD bit
-   3. IFCS which makes the hardware compute the Ethernet CRC frame checksum for us
-   4. EOP which has the same semantics as in receive descriptors
+   1. DEXT which indicates that we use advanced descriptors as well.
+   2. RS which makes the hardware report the status of the descriptor by setting the DD bit.
+   3. IFCS which makes the hardware compute the Ethernet CRC frame checksum for us.
+   4. EOP which has the same semantics as in receive descriptors.
 5. The STA which has a single relevant field, the DD bit with the same semantics as in receive descriptors.
 
 The procedure to send a packet is very similar to the receive one, we insert a read descriptor at the beginning of the
@@ -1161,31 +1162,30 @@ split into three parts:
 All three of these models hook into verix by implementing the traits provided by `pc-hal` and then plugging
 into the APIs that are usually filled with `pc-hal-l4`.
 
-The model for the PCI @VBus is rather straightforward as, just like the L4 one, it merely simulates
-a bus with a single relevant PCI device, the Intel 82599. The Kani harness that we use to verify
-this procedure simply feeds this simulated @VBus to the discovery procedure of verix and asserts
+The model for the PCI @VBus is rather straightforward, as it only has to simulate a PCI bus with a single device, the Intel 82599.
+The Kani harness, that we use to verify this procedure, simply feeds this simulated @VBus to the discovery procedure of verix and asserts
 that the correct device is found.
 
 The modeling of the initialization procedure is more complicated. An uninitialized Intel 82599 in
 `mix` contains a state machine with 18 states. Each of these states correspond to one very fine
 granular step in the initialization procedure described in @intel:82599. All of the @MMIO register
 reads and writes are hooked up to this state machine through the `pc-hal` interfaces. As the register
-accesses occur we assert that the reads and writes defined by the current initialization step occur in the
+accesses occur, we assert that the reads and writes defined by the current initialization step occur in the
 correct order and with the correct values. In particular we also assert that registers from
 previous steps are not further modified, unless required by the step. After the procedure is
-done we assert that the machine is in the final state to verify that the device has finished initialization.
+done, we assert that the machine is in the final state to verify that the device has finished initialization.
 
 While both of these verification targets contain very linear code and the Kani harnesses don't make significant
 use of symbolic variables, we still run them through Kani instead of a normal mock test. This is because
 we are also interested in the additional guarantees that Kani gives us for free, in particular the pointer-related ones.
 
 The most complex model is the one for receiving and transmitting packets. Just like in @verix we begin
-with discussing the receive half as the transmit one works analogously. The properties that we aim
+with discussing the receive half, as the transmit one works analogously. The properties that we aim
 to verify for the receive procedure are:
-1. If there is at least one packet present on the queue and we have memory to replace the slot we receive it
-2. If there is no packet present on the queue we don't receive anything
+1. If there is at least one packet present on the queue and we have memory to replace the slot we receive it.
+2. If there is no packet present on the queue we don't receive anything.
 3. The additional properties that Kani gives us for free, again the ones of particular interest are
-  pointer-related ones.
+   pointer-related ones.
 
 We begin by defining what it means for a queue state to be valid and then establish
 an induction-based proof to demonstrate that the queue state always remains valid. Afterwards,
@@ -1253,7 +1253,7 @@ properties that we are interested in, based on this result.
 ]
 
 #theorem("The receive queue state remains valid")[
-    Assuming that we already are in a valid receive queue state we always remain in a valid receive queue state
+    Assuming that we already are in a valid receive queue state, we always remain in a valid receive queue state
     after calling the receive procedure.
 ] <step_rx_valid>
 
@@ -1368,7 +1368,7 @@ for @rx_valid, except that we use transmit instead of receive definitions:
 ]
 
 #theorem("The transmit queue state remains valid")[
-    Assuming that we already are in a valid transmit queue state we always remain in a valid transmit queue state
+    Assuming that we already are in a valid transmit queue state, we always remain in a valid transmit queue state
     after calling the receive procedure.
 ] <step_tx_valid>
 
@@ -1414,15 +1414,15 @@ verix with `mix`.
 = Evaluation <evaluation>
 In this chapter we evaluate the success of our implementation. We first investigate how well
 we were able to meet our verification goals in @eval-veri, in particular focusing on the limitations
-we met along the way. In order to demonstrate that our approach is viable for real-world drivers
+we met along the way. In order to demonstrate that our approach is viable for real-world drivers,
 we also perform a basic performance evaluation, comparing our performance to the one of ixy in @perf.
 
 == Verification <eval-veri>
-Based on the git history of `mix` we estimate that the entire verification effort consumed about 150
-man-hours. This excludes the porting effort of the driver onto L4 which did consume more time due to
+Based on the git history of `mix`, we estimate that the entire verification effort consumed about 150
+man-hours. This excludes the porting effort of the driver onto L4, which did consume more time due to
 our inexperience with the L4 hardware framework in the beginning.
 
-While we were able perform a lot of our proofs with Kani, we met two limitations of Kani while doing so.
+While we were able to verify the majority of our proofs with Kani, we met two limitations of Kani while doing so.
 
 The first one was that Kani was seemingly unable to translate the dropping of our packet
 data structure into the @CBMC input format. Unlike normal data structures, we implemented
@@ -1451,7 +1451,7 @@ where
     }
 }
 ```]
-While Kani was not inherently unable to deal with custom `Drop` implementations it hung up
+While Kani was not inherently unable to deal with custom `Drop` implementations, it hung up
 while attempting to translate `self.pool.free_buf`. This is also the reason that we did not
 end up verifying the clean-up of the transmit queue above. Additionally, we also had to leak
 all of the packets in the packet receive and transmit lemmas to avoid the same bug. While this
@@ -1473,7 +1473,7 @@ To break this boundary we attempted to use a portfolio of SAT solvers for our ha
 - Glucose @glucose
 
 These experiments were run on a cloud VM with 48GB of RAM and a time limit of
-16 hours for all proof harnesses combined. As we can see in @satres the amount of RAM did end
+16 hours for all proof harnesses combined. As we can see in @satres, the amount of RAM did end
 up being the limiting factor when trying to scale the queue size up.
 #figure(
   table(
@@ -1489,16 +1489,16 @@ up being the limiting factor when trying to scale the queue size up.
   ),
   caption: [Resource Consumption of different SAT solvers],
 ) <satres>
-That being said we did observe that the vast majority of memory when trying to scale the queue size
+That being said we did observe that the vast majority of memory, when trying to scale the queue size,
 was consumed by @CBMC itself, not the SAT solvers. This led us to trying out SMT solvers instead,
 since translating the problem into SMT logic instead of SAT does not require @CBMC to do so much work.
 Like with the SAT solvers, we attempted a portfolio of SMT solvers:
 - Z3 @z3
 - CVC4 @cvc4
 - CVC5 @cvc5
-As we can see in @smtres this approach did unfortunately not yield further progress. Using both Z3 and
+As we can see in @smtres, this approach did unfortunately not yield further progress. Using both Z3 and
 CVC5 as a backend for @CBMC uncovered a bug in @CBMC where it attempts to access a value in a map that
-is not present. While @CBMC succeeded in generating SMT instances for CVC4 all of these instances
+is not present. While @CBMC succeeded in generating SMT instances for CVC4, all of these instances
 contained a bit vector declaration of size $0$ which is not accepted by CVC4.
 
 #figure(
@@ -1525,14 +1525,14 @@ hardware is competitive with that reported for ixy. Because our Intel 82599
 variant only has one cable socket, as opposed to the two socket variant used with ixy, we only
 benchmarked a reflecting instead of a bidirectional forwarding application. The comparison
 between our results, using a batch size of 64 packets, can be seen in @perf-packets. While the speed of
-network cables is usually measured in GBit/s the speed of packet processing applications is
+network cables is usually measured in GBit/s, the speed of packet processing applications is
 measured in @Mpps. The theoretical maximum @Mpps on a single 10 GBit/s line with 64-byte
 packets is $14.88$ @Mpps. However, ixy can reach higher speeds than that as it is
 forwarding between two 10 GBit/s lines, for this reason, we look at the percentage of the
 maximum possible speed to draw a comparison. Note that this comparison is biased towards
-verix as ixy has additional bookkeeping to do for the bidirectional forwarding. An additional
+verix, as ixy has additional work to do for the bidirectional forwarding. An additional
 difference between our test setups is the CPU. While the ixy test setup ran on a
-Xeon E3-1230 v2 at both 3.3 and 1.7 GHz our setup ran a Xeon D-1521 running
+Xeon E3-1230 v2 at both 3.3 and 1.7 GHz, our setup ran a Xeon D-1521 running
 at 2.4 GHz. As we can see in the data the CPU frequency causes a drastic performance gap
 between the two ixy runs. Because of this, we attribute at least the majority of the remaining
 $approx 12\%$ speed to tie with ixy to CPU frequency and not to the inability of the Rust compiler
@@ -1558,14 +1558,14 @@ that we set out to at a relatively small but not irrelevant scale.
 
 Our work might be extended in roughly three directions that we briefly lay out below.
 
-First off, one could attempt to turn `pc-hal` into a truly generic hardware abstraction layer
+First off, one could attempt to turn `pc-hal` into a truly generic hardware abstraction layer,
 like `embedded-hal` and thus achieve portable Rust-based user space drivers across multiple
 operating systems.
 
 Secondly, verix does mostly exist in a vacuum right now, it is not useful to other
 L4 tasks that wish to interact with the network, in particular VMs. For this purpose, one could
 implement and potentially verify a virtio adapter that lets verix communicate with other L4 tasks
-to provide verified high-performance networking..
+to provide verified high-performance networking.
 
 Lastly, as already mentioned above, improving the queue size for which our proof can be conducted
 by improving @CBMC, Kani or our harnesses and thus enabling full verification of the real-world application.
