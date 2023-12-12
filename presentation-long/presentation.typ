@@ -1,5 +1,10 @@
 #import "@preview/polylux:0.3.1": *
 #import "@preview/codelst:1.0.0": sourcecode
+#import "@preview/bytefield:0.0.2": bytefield, bit, bits, bytes, flagtext
+#let bfield(..args) = [
+  #set text(18pt);
+  #bytefield(msb_first: true, ..args);
+]
 
 #import "theme.typ" : *
 
@@ -212,6 +217,24 @@ bar0.ctrl().modify(|_, w| w.lrst(1).rst(1));
   image("figures/drawio/rx-queue.drawio.pdf.svg", width: 70%),
   caption: [Example RX queue]
 ) <rx-queue-1>
+]
+
+#slide(title: "RX Descriptors")[
+#figure(
+  bfield(bits: 64,
+    bits(64)[Packet Buffer Address],
+    bits(63)[Header Buffer Address], bit[#flagtext("DD")],
+  ),
+  caption: [Advanced Receive Descriptors - Read]
+) <adv_rx_read>
+
+#figure(
+  bfield(bits: 64,
+    bits(32)[RSS Hash], bit[#flagtext("SPH")], bits(10)[HDR_LEN], bits(4)[RSCCNT], bits(13)[Packet Type], bits(4)[RSST],
+    bits(16)[VLAN Tag], bits(16)[PKT_LEN], bits(12)[Extended Error], bits(20)[Extended Status]
+  ),
+  caption: [Advanced Receive Descriptors - Write-Back]
+) <adv_rx_wb>
 ]
 
 #slide(title: "Driver state")[
