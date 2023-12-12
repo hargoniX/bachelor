@@ -793,8 +793,9 @@ The communication with the Intel 82599 happens in roughly three phases:
 1. PCI device discovery and setup
 2. Configuration of the actual device
 3. Sending and receiving packets
-In the following chapter, we aim to give an overview of these three sections with
-a particular focus on the third one, as this is our main verification concern.
+In the following chapter, we aim to give an overview of the first two phases.
+The third one will be discussed in detail in @mix, as it is the main verification target.
+
 
 A normal driver would initially have to look for the device on its own. However, as we are
 on L4, the IO server instead searches for these devices and presents them
@@ -805,7 +806,8 @@ This config space is in essence a memory-like structure that we can read from an
 @IPC calls to the IO server. The beginning (and relevant to us part) of this structure
 can be seen in @pcicfg. The fields that are of most interest to our driver are
 the 6 @BAR ones, they contain addresses of memory regions that are shared between
-our CPU and the device which we can use for @MMIO based configuration.
+our CPU and the device. These regions can be mapped into our address space and
+then used for @MMIO based configuration.
 
 The datasheet
 of the device @intel:82599 tells us that the relevant @BAR for configuring the device
@@ -906,10 +908,10 @@ While the majority of the interfaces provided by `pc-hal` could probably be made
 general to fit multiple platforms, they are currently very much designed with the L4 interface
 in mind. This makes the `pc-hal-l4` implementation of the traits mostly a thin wrapper around
 the Rust L4 APIs. These APIs were initially developed in @humendal4 and extended by
-us to support more hardware-related things in addition.
+us to support more hardware-related things.
 
 In addition to the traits `pc-hal` also provides a few utility functions that work
-on top of them. The most notable one here is a type-safe @MMIO abstraction in the spirit
+on top of them. The most notable one is a type-safe @MMIO abstraction in the spirit
 of the Rust Embedded @WG's `svd2rust` tool. `svd2rust` allows Rust Embedded developers
 to automatically generate type-safe implementations for @MMIO interfaces of ARM and RISC-V chips.
 The need for such a type-safe API arose, because interacting with an @MMIO interface in Rust
