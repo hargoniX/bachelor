@@ -17,7 +17,7 @@
 #title-slide(
   author: [Henrik Böving],
   title: "VeRix: A Verified Rust ix(4) driver",
-  date: "DD.MM.2024",
+  date: "15.01.2024",
   extra: "Thesis Defense",
   logo_company: "figures/genua.svg",
   logo_institution: "figures/hm.svg",
